@@ -1,0 +1,7 @@
+/bin/Debug
+/bin/Release
+/compiler/linux64/debug
+/compiler/linux64/release
+/compiler/vc14win64
+/*.bak
+/include/*.bak
