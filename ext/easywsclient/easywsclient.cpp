@@ -690,5 +690,14 @@ WebSocket::pointer WebSocket::from_url_no_mask(const std::string& url, const std
 	return ::from_url(url, false, origin);
 }
 
+void socketStartup(void)
+{
+	wsocket::Wsocket::startupSockets();
+}
+
+void socketShutdown(void)
+{
+	wsocket::Wsocket::shutdownSockets();
+}
 
 } // namespace easywsclient

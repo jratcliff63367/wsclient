@@ -5,3 +5,4 @@
 /compiler/vc14win64
 /*.bak
 /include/*.bak
+/ext/easywsclient/*.bak

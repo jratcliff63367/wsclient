@@ -67,6 +67,10 @@ class WebSocket {
     virtual void _dispatchBinary(BytesCallback_Imp& callable) = 0;
 };
 
+
+void socketStartup(void);
+void socketShutdown(void);
+
 } // namespace easywsclient
 
 #endif /* EASYWSCLIENT_HPP_20120819_MIOFVASDTNUASZDQPLFD */
