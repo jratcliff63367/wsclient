@@ -22,7 +22,7 @@ namespace simplebuffer
 
 		// Get the current data buffer.  It can be modified..but...you cannot go beyond
 		// the current length
-		virtual uint8_t *getData(uint32_t &dataLen) override final
+		virtual uint8_t *getData(uint32_t &dataLen) const override final
 		{
 			dataLen = mLen;
 			return mBuffer;
@@ -58,7 +58,7 @@ namespace simplebuffer
 				mBuffer = newBuffer;
 				available = mMaxLen - mLen;
 			}
-			if (available <= dataLen)
+			if (dataLen  <= available)
 			{
 				if (data)
 				{
@@ -90,6 +90,26 @@ namespace simplebuffer
 		virtual void		release(void) override final
 		{
 			delete this;
+		}
+
+		virtual uint32_t getSize(void) const override final
+		{
+			return mLen;
+		}
+
+		virtual void shrink(uint32_t removeLen) override final
+		{
+			if (removeLen >= mLen)
+			{
+				mLen = 0;
+			}
+			else
+			{
+				uint32_t keepBytes = mLen - removeLen;
+				uint32_t startIndex = mLen - keepBytes;
+				memcpy(mBuffer, &mBuffer[startIndex], keepBytes);
+				mLen = keepBytes;
+			}
 		}
 
 	private:

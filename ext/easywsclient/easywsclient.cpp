@@ -1,13 +1,14 @@
-#ifdef _MSC_VER
-#pragma warning(disable:4267 4100 4456 4244)
-#endif
 
 #include <vector>
 #include <string>
+#include <assert.h>
 
 #include "easywsclient.hpp"
 #include "wplatform.h"
 #include "wsocket.h"
+#include "SimpleBuffer.h"
+
+#define DEFAULT_TRANSMIT_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 
 namespace easywsclient
 { // private module-only namespace
@@ -54,8 +55,9 @@ namespace easywsclient
 			uint8_t		masking_key[4];
 		};
 
-		WebSocketImpl(wsocket::Wsocket *_sockfd, bool useMask) : mSocket(_sockfd), mReadyState(OPEN), mUseMake(useMask)
+		WebSocketImpl(wsocket::Wsocket *_sockfd, bool useMask) : mSocket(_sockfd), mReadyState(OPEN), mUseMask(useMask)
 		{
+			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE);
 		}
 
 		virtual ~WebSocketImpl(void)
@@ -68,6 +70,10 @@ namespace easywsclient
 			if (mSocket)
 			{
 				mSocket->release();
+			}
+			if (mTransmitBuffer)
+			{
+				mTransmitBuffer->release();
 			}
 		}
 
@@ -93,12 +99,12 @@ namespace easywsclient
 			}
 			if (timeout != 0)
 			{
-				mSocket->select(timeout, mTransmitBuffer.size());
+				mSocket->select(timeout, mTransmitBuffer->getSize());
 			}
 			while (true)
 			{
 				// FD_ISSET(0, &rfds) will be true
-				int N = mReceiveBuffer.size();
+				int N = int(mReceiveBuffer.size());
 				mReceiveBuffer.resize(N + 1500);
 				int32_t ret = mSocket->receive((char *)&mReceiveBuffer[0] + N, 1500);
 				if (false)
@@ -123,9 +129,11 @@ namespace easywsclient
 				}
 			}
 
-			while (mTransmitBuffer.size())
+			while (mTransmitBuffer->getSize())
 			{
-				int ret = mSocket->send(&mTransmitBuffer[0], mTransmitBuffer.size());
+				uint32_t dataLen;
+				const uint8_t *buffer = mTransmitBuffer->getData(dataLen);
+				int ret = mSocket->send(buffer, dataLen);
 				if (false)
 				{
 				} // ??
@@ -142,10 +150,10 @@ namespace easywsclient
 				}
 				else
 				{
-					mTransmitBuffer.erase(mTransmitBuffer.begin(), mTransmitBuffer.begin() + ret);
+					mTransmitBuffer->shrink(ret); // shrink the transmit buffer by the number of bytes we managed to send..
 				}
 			}
-			if (!mTransmitBuffer.size() && mReadyState == CLOSING)
+			if (!mTransmitBuffer->getSize() && mReadyState == CLOSING)
 			{
 				mSocket->close();
 				mReadyState = CLOSED;
@@ -223,9 +231,9 @@ namespace easywsclient
 				{
 					if (ws.mask)
 					{
-						for (size_t i = 0; i != ws.N; ++i)
+						for (size_t j = 0; j != ws.N; ++j)
 						{
-							mReceiveBuffer[i + ws.header_size] ^= ws.masking_key[i & 0x3];
+							mReceiveBuffer[j + ws.header_size] ^= ws.masking_key[j & 0x3];
 						}
 					}
 					mReceivedData.insert(mReceivedData.end(), mReceiveBuffer.begin() + ws.header_size, mReceiveBuffer.begin() + ws.header_size + (size_t)ws.N);// just feed
@@ -243,13 +251,13 @@ namespace easywsclient
 				{
 					if (ws.mask)
 					{
-						for (size_t i = 0; i != ws.N; ++i)
+						for (size_t j = 0; j != ws.N; ++j)
 						{
-							mReceiveBuffer[i + ws.header_size] ^= ws.masking_key[i & 0x3];
+							mReceiveBuffer[j + ws.header_size] ^= ws.masking_key[j & 0x3];
 						}
 					}
-					std::string data(mReceiveBuffer.begin() + ws.header_size, mReceiveBuffer.begin() + ws.header_size + (size_t)ws.N);
-					sendData(wsheader_type::PONG, data.size(), data.begin(), data.end());
+					std::string pingData(mReceiveBuffer.begin() + ws.header_size, mReceiveBuffer.begin() + ws.header_size + (size_t)ws.N);
+					sendData(wsheader_type::PONG, pingData.size() ? &pingData[0] : nullptr, pingData.size());
 				}
 				else if (ws.opcode == wsheader_type::PONG)
 				{
@@ -270,27 +278,27 @@ namespace easywsclient
 
 		void sendPing()
 		{
-			std::string empty;
-			sendData(wsheader_type::PING, empty.size(), empty.begin(), empty.end());
+			sendData(wsheader_type::PING, nullptr, 0);
 		}
 
 		void send(const std::string& message)
 		{
-			sendData(wsheader_type::TEXT_FRAME, message.size(), message.begin(), message.end());
+			sendData(wsheader_type::TEXT_FRAME, message.size() ? &message[0] : nullptr, message.size());
 		}
 
 		void sendBinary(const std::string& message)
 		{
-			sendData(wsheader_type::BINARY_FRAME, message.size(), message.begin(), message.end());
+			sendData(wsheader_type::BINARY_FRAME, message.size() ? &message[0] : nullptr, message.size());
 		}
 
 		void sendBinary(const std::vector<uint8_t>& message)
 		{
-			sendData(wsheader_type::BINARY_FRAME, message.size(), message.begin(), message.end());
+			sendData(wsheader_type::BINARY_FRAME, message.size() ? &message[0] : nullptr, message.size());
 		}
 
-		template<class Iterator>
-		void sendData(wsheader_type::opcode_type type, uint64_t message_size, Iterator message_begin, Iterator message_end)
+		void sendData(wsheader_type::opcode_type type,	// Type of data we are sending
+					  const void *messageData,			// The optional message data (this can be null)
+					  uint64_t message_size)			// The size of the message data
 		{
 			// TODO:
 			// Masking key should (must) be derived from a high quality random
@@ -302,39 +310,49 @@ namespace easywsclient
 			{
 				return;
 			}
-			std::vector<uint8_t> header;
-			header.assign(2 + (message_size >= 126 ? 2 : 0) + (message_size >= 65536 ? 6 : 0) + (mUseMake ? 4 : 0), 0);
-			header[0] = 0x80 | type;
-			if (false)
+			uint8_t header[14];
+
+			uint32_t expectedHeaderLen = 2 + (message_size >= 126 ? 2 : 0) + (message_size >= 65536 ? 6 : 0) + (mUseMask ? 4 : 0);
+			uint32_t headerLen = expectedHeaderLen;
+
+			header[0] = uint8_t(0x80 | type);
+			if (message_size < 126)
 			{
-			}
-			else if (message_size < 126)
-			{
-				header[1] = (message_size & 0xff) | (mUseMake ? 0x80 : 0);
-				if (mUseMake)
+				header[1] = (message_size & 0xff) | (mUseMask ? 0x80 : 0);
+				if (mUseMask)
 				{
 					header[2] = masking_key[0];
 					header[3] = masking_key[1];
 					header[4] = masking_key[2];
 					header[5] = masking_key[3];
+					headerLen = 6;
+				}
+				else
+				{
+					headerLen = 2;
 				}
 			}
 			else if (message_size < 65536)
 			{
-				header[1] = 126 | (mUseMake ? 0x80 : 0);
+				header[1] = 126 | (mUseMask ? 0x80 : 0);
 				header[2] = (message_size >> 8) & 0xff;
 				header[3] = (message_size >> 0) & 0xff;
-				if (mUseMake)
+				if (mUseMask)
 				{
 					header[4] = masking_key[0];
 					header[5] = masking_key[1];
 					header[6] = masking_key[2];
 					header[7] = masking_key[3];
+					headerLen = 8;
+				}
+				else
+				{
+					headerLen = 4;
 				}
 			}
 			else
 			{ // TODO: run coverage testing here
-				header[1] = 127 | (mUseMake ? 0x80 : 0);
+				header[1] = 127 | (mUseMask ? 0x80 : 0);
 				header[2] = (message_size >> 56) & 0xff;
 				header[3] = (message_size >> 48) & 0xff;
 				header[4] = (message_size >> 40) & 0xff;
@@ -343,23 +361,37 @@ namespace easywsclient
 				header[7] = (message_size >> 16) & 0xff;
 				header[8] = (message_size >> 8) & 0xff;
 				header[9] = (message_size >> 0) & 0xff;
-				if (mUseMake)
+				if (mUseMask)
 				{
 					header[10] = masking_key[0];
 					header[11] = masking_key[1];
 					header[12] = masking_key[2];
 					header[13] = masking_key[3];
+					headerLen = 14;
+				}
+				else
+				{
+					headerLen = 10;
 				}
 			}
+			assert(headerLen == expectedHeaderLen);
 			// N.B. - mTransmitBuffer will keep growing until it can be transmitted over the socket:
-			mTransmitBuffer.insert(mTransmitBuffer.end(), header.begin(), header.end());
-			mTransmitBuffer.insert(mTransmitBuffer.end(), message_begin, message_end);
-			if (mUseMake)
+			mTransmitBuffer->addBuffer(header, headerLen);
+			if (messageData)
 			{
-				size_t message_offset = mTransmitBuffer.size() - message_size;
-				for (size_t i = 0; i != message_size; ++i)
+				mTransmitBuffer->addBuffer(messageData, uint32_t(message_size));
+			}
+			// If we are using masking then we need to XOR the message by the mask
+			if (mUseMask)
+			{
+				// TODO: This needs to be optimized
+				uint32_t message_offset = mTransmitBuffer->getSize() - uint32_t(message_size);
+				uint32_t dataLen;
+				uint8_t *data = mTransmitBuffer->getData(dataLen);
+				uint8_t *maskData = &data[message_offset];
+				for (uint32_t i = 0; i != message_size; ++i)
 				{
-					mTransmitBuffer[message_offset + i] ^= masking_key[i & 0x3];
+					maskData[i] ^= masking_key[i & 0x3];
 				}
 			}
 		}
@@ -370,19 +402,18 @@ namespace easywsclient
 			{
 				return;
 			}
+			// add the 'close frame' command to the transmit buffer and set the closing state on
 			mReadyState = CLOSING;
 			uint8_t closeFrame[6] = { 0x88, 0x80, 0x00, 0x00, 0x00, 0x00 }; // last 4 bytes are a masking key
-			std::vector<uint8_t> header(closeFrame, closeFrame + 6);
-			mTransmitBuffer.insert(mTransmitBuffer.end(), header.begin(), header.end());
+			mTransmitBuffer->addBuffer(closeFrame, sizeof(closeFrame));
 		}
 	private:
-		std::vector<uint8_t> mReceiveBuffer;			// receive buffer
-		std::vector<uint8_t> mTransmitBuffer;			// transmit buffer
-		std::vector<uint8_t> mReceivedData;	// received data
-
-		wsocket::Wsocket	*mSocket{ nullptr };
-		ReadyStateValues	mReadyState{ CLOSED };
-		bool				mUseMake{ true };
+		std::vector<uint8_t>		mReceiveBuffer;			// receive buffer
+		simplebuffer::SimpleBuffer *mTransmitBuffer{ nullptr };			// transmit buffer
+		std::vector<uint8_t>		mReceivedData;	// received data
+		wsocket::Wsocket			*mSocket{ nullptr };
+		ReadyStateValues			mReadyState{ CLOSED };
+		bool						mUseMask{ true };
 };
 
 WebSocket *WebSocket::create(const char *_url, const char *_origin,bool useMask)
@@ -440,32 +471,32 @@ WebSocket *WebSocket::create(const char *_url, const char *_origin,bool useMask)
 		int status;
 		int i;
 		wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path);
-		sockfd->send(line, strlen(line));
+		sockfd->send(line, uint32_t(strlen(line)));
 		if (port == 80)
 		{
 			wplatform::stringFormat(line, 256, "Host: %s\r\n", host);
-			sockfd->send(line, strlen(line));
+			sockfd->send(line, uint32_t(strlen(line)));
 		}
 		else
 		{
 			wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port);
-			sockfd->send(line, strlen(line));
+			sockfd->send(line, uint32_t(strlen(line)));
 		}
 		wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n");
-		sockfd->send(line, strlen(line));
+		sockfd->send(line, uint32_t(strlen(line)));
 		wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n");
-		sockfd->send(line, strlen(line));
+		sockfd->send(line, uint32_t(strlen(line)));
 		if (!origin.empty())
 		{
 			wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin.c_str());
-			sockfd->send(line, strlen(line));
+			sockfd->send(line, uint32_t(strlen(line)));
 		}
 		wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n");
-		sockfd->send(line, strlen(line));
+		sockfd->send(line, uint32_t(strlen(line)));
 		wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n");
-		sockfd->send(line, strlen(line));
+		sockfd->send(line, uint32_t(strlen(line)));
 		wplatform::stringFormat(line, 256, "\r\n");
-		sockfd->send(line, strlen(line));
+		sockfd->send(line, uint32_t(strlen(line)));
 		for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
 		{
 			if (sockfd->receive(line + i, 1) == 0)

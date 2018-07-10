@@ -11,9 +11,13 @@ public:
 
 	static SimpleBuffer *create(uint32_t defaultSize);
 
+	virtual void shrink(uint32_t removeLen) = 0;
+
+	virtual uint32_t getSize(void) const = 0;
+
 	// Get the current data buffer.  It can be modified..but...you cannot go beyond
 	// the current length
-	virtual uint8_t *getData(uint32_t &dataLen) = 0;
+	virtual uint8_t *getData(uint32_t &dataLen) const = 0;
 
 	// Clear the contents of the buffer (simply resets the length back to zero)
 	virtual void 		clear(void) = 0; 	// clear the buffer
