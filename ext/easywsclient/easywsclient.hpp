@@ -43,10 +43,16 @@ class WebSocket
     void dispatch(Callable callable)
         // For callbacks that accept a string argument.
     { // N.B. this is compatible with both C++11 lambdas, functors and C function pointers
-        struct _Callback : public Callback_Imp {
+        struct _Callback : public Callback_Imp 
+		{
             Callable& callable;
-            _Callback(Callable& callable) : callable(callable) { }
-            void operator()(const std::string& message) { callable(message); }
+            _Callback(Callable& callable) : callable(callable) 
+			{ 
+			}
+            void operator()(const std::string& message) 
+			{ 
+				callable(message); 
+			}
         };
         _Callback callback(callable);
         _dispatch(callback);
