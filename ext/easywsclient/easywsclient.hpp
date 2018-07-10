@@ -23,7 +23,7 @@ public:
 class WebSocket 
 {
   public:
-    enum readyStateValues 
+    enum ReadyStateValues 
 	{ 
 		CLOSING, 
 		CLOSED, 
@@ -43,7 +43,7 @@ class WebSocket
     virtual void sendPing() = 0;
     virtual void close() = 0;
 
-    virtual readyStateValues getReadyState() const = 0;
+    virtual ReadyStateValues getReadyState() const = 0;
 
 	virtual void release(void) = 0;
 
