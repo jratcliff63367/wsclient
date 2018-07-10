@@ -417,16 +417,19 @@ namespace easywsclient
 			sendData(wsheader_type::BINARY_FRAME, data, dataLen);
 		}
 
+		void getMaskingKey(uint8_t maskingKey[4])
+		{
+			uint64_t seed = wplatform::getRandomTime();
+			memcpy(maskingKey, &seed, 4);
+		}
 
 		void sendData(wsheader_type::opcode_type type,	// Type of data we are sending
 					  const void *messageData,			// The optional message data (this can be null)
 					  uint64_t message_size)			// The size of the message data
 		{
-			// TODO:
-			// Masking key should (must) be derived from a high quality random
-			// number generator, to mitigate attacks on non-WebSocket friendly
-			// middleware:
-			const uint8_t masking_key[4] = { 0x12, 0x34, 0x56, 0x78 };
+			uint8_t masking_key[4];
+			getMaskingKey(masking_key);
+
 			// TODO: consider acquiring a lock on mTransmitBuffer...
 			if (mReadyState == CLOSING || mReadyState == CLOSED)
 			{
