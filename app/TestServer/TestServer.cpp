@@ -3,12 +3,9 @@
 #endif
 
 #include "easywsclient.h"
+#include "wsocket.h"
 #include "InputLine.h"
 
-#ifdef _WIN32
-#pragma comment( lib, "ws2_32" )
-#include <WinSock2.h>
-#endif
 #include <assert.h>
 #include <stdio.h>
 #include <string>
@@ -18,18 +15,7 @@ using easywsclient::WebSocket;
 
 int main()
 {
-#ifdef _WIN32
-	INT rc;
-	WSADATA wsaData;
-
-	rc = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (rc) 
-	{
-		printf("WSAStartup Failed.\n");
-		return 1;
-	}
-#endif
-
+	easywsclient::socketStartup();
 	easywsclient::WebSocket *ws = easywsclient::WebSocket::create("ws://localhost:9002");
 	assert(ws);
 	ws->sendText("goodbye");
@@ -39,8 +25,8 @@ int main()
 		ws->poll(nullptr,1);
 	}
 	ws->release();
-#ifdef _WIN32
-	WSACleanup();
-#endif
+
+	easywsclient::socketShutdown();
+
 	return 0;
 }

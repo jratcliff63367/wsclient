@@ -51,6 +51,4 @@ int main()
 		ws->release();
 	}
 	easywsclient::socketShutdown();
-
-
 }
