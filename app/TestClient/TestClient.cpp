@@ -5,6 +5,28 @@
 #include "easywsclient.hpp"
 #include "InputLine.h"
 
+class ReceiveData : public easywsclient::WebSocketCallback
+{
+public:
+	virtual void receiveMessage(const void *data, uint32_t dataLen, bool isAscii) override final
+	{
+		if (isAscii)
+		{
+			const char *cdata = (const char *)data;
+			printf("Got message:");
+			for (uint32_t i = 0; i < dataLen; i++)
+			{
+				printf("%c", cdata[i]);
+			}
+			printf("\r\n");
+		}
+		else
+		{
+			printf("Got binary data %d bytes long.\r\n", dataLen);
+		}
+	}
+};
+
 int main()
 {
 	easywsclient::socketStartup();
@@ -13,7 +35,7 @@ int main()
 	{
 		char buffer[512];
 		uint32_t len = 0;
-
+		ReceiveData rd;
 		InputMode mode = InputMode::NOTHING;
 		while (mode != InputMode::ESCAPE)
 		{
@@ -23,18 +45,7 @@ int main()
 				ws->send(std::string(buffer));
 				len = 0;
 			}
-			ws->poll(1); // poll the socket connection
-
-			ws->dispatch([&](const std::string& data)
-			{
-				printf("Got ASCII message: %s\r\n", data.c_str());
-			});
-
-
-			ws->dispatchBinary([&](const std::vector<uint8_t>& data)
-			{
-				printf("Got binary data: %d bytes long\r\n", int(data.size()));
-			});
+			ws->poll(&rd,1); // poll the socket connection
 		}
 		ws->release();
 	}

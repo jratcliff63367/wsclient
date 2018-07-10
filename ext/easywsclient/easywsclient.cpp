@@ -9,10 +9,6 @@
 #include "wplatform.h"
 #include "wsocket.h"
 
-
-using easywsclient::Callback_Imp;
-using easywsclient::BytesCallback_Imp;
-
 namespace easywsclient
 { // private module-only namespace
 
@@ -75,7 +71,7 @@ class WebSocketImpl : public easywsclient::WebSocket
 		close();
 		while (readyState != CLOSED)
 		{
-			poll(1);
+			poll(nullptr,1);
 		}
 		if (sockfd)
 		{
@@ -93,7 +89,7 @@ class WebSocketImpl : public easywsclient::WebSocket
 		return readyState;
 	}
 
-	void poll(int timeout) 
+	void poll(WebSocketCallback *callback,int timeout)
 	{ // timeout in milliseconds
 		if (readyState == CLOSED) 
 		{
@@ -162,31 +158,13 @@ class WebSocketImpl : public easywsclient::WebSocket
 			sockfd->close();
 			readyState = CLOSED;
 		}
-	}
-
-	// Callable must have signature: void(const std::string & message).
-	// Should work with C functions, C++ functors, and C++11 std::function and
-	// lambda:
-	//template<class Callable>
-	//void dispatch(Callable callable)
-	virtual void _dispatch(Callback_Imp & callable) 
-	{
-		struct CallbackAdapter : public BytesCallback_Imp
-			// Adapt void(const std::string<uint8_t>&) to void(const std::string&)
+		if (callback)
 		{
-			Callback_Imp& callable;
-			CallbackAdapter(Callback_Imp& callable) : callable(callable) { }
-			void operator()(const std::vector<uint8_t>& message) 
-			{
-				std::string stringMessage(message.begin(), message.end());
-				callable(stringMessage);
-			}
-		};
-		CallbackAdapter bytesCallback(callable);
-		_dispatchBinary(bytesCallback);
+			_dispatchBinary(callback);
+		}
 	}
 
-	virtual void _dispatchBinary(BytesCallback_Imp & callable) 
+	virtual void _dispatchBinary(WebSocketCallback *callback) 
 	{
 		// TODO: consider acquiring a lock on rxbuf...
 		while (true) 
@@ -261,7 +239,10 @@ class WebSocketImpl : public easywsclient::WebSocket
 				receivedData.insert(receivedData.end(), rxbuf.begin()+ws.header_size, rxbuf.begin()+ws.header_size+(size_t)ws.N);// just feed
 				if (ws.fin) 
 				{
-					callable((const std::vector<uint8_t>) receivedData);
+					if (callback && !receivedData.empty())
+					{
+						callback->receiveMessage(&receivedData[0], uint32_t(receivedData.size()), ws.opcode == wsheader_type::TEXT_FRAME);
+					}
 					receivedData.erase(receivedData.begin(), receivedData.end());
 					std::vector<uint8_t> ().swap(receivedData);// free memory
 				}

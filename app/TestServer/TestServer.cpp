@@ -15,10 +15,6 @@
 
 using easywsclient::WebSocket;
 
-void handle_message(const std::string & message)
-{
-	printf(">>> %s\n", message.c_str());
-}
 
 int main()
 {
@@ -40,8 +36,7 @@ int main()
 	ws->send("hello");
 	while (ws->getReadyState() != WebSocket::CLOSED) 
 	{
-		ws->poll();
-		ws->dispatch(handle_message);
+		ws->poll(nullptr,1);
 	}
 	ws->release();
 #ifdef _WIN32
