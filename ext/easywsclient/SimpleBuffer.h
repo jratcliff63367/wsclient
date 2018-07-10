@@ -1,0 +1,37 @@
+#pragma once
+
+#include <stdint.h>
+
+namespace simplebuffer
+{
+
+class SimpleBuffer
+{
+public:
+
+	static SimpleBuffer *create(uint32_t defaultSize);
+
+	// Get the current data buffer.  It can be modified..but...you cannot go beyond
+	// the current length
+	virtual uint8_t *getData(uint32_t &dataLen) = 0;
+
+	// Clear the contents of the buffer (simply resets the length back to zero)
+	virtual void 		clear(void) = 0; 	// clear the buffer
+
+	// Add this data to the current buffer.  If 'data' is null, it doesn't copy any data
+	virtual void 		addBuffer(const void *data,uint32_t dataLen) = 0;
+
+	// Note, the reset command does not retain the previous data buffer!
+	virtual void		reset(uint32_t defaultSize) = 0;
+
+	// Release the SimpleBuffer instance
+	virtual void		release(void) = 0;
+
+protected:
+	virtual ~SimpleBuffer(void)
+	{
+	}
+
+};
+
+}
