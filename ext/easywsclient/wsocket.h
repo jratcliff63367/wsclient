@@ -14,11 +14,14 @@ public:
 	static void startupSockets(void);
 	static void shutdownSockets(void);
 
-	virtual void select(uint32_t timeOut,size_t txBufSize) = 0;
-	virtual void nullSelect(uint32_t timeOut) = 0;
+	virtual void select(int32_t timeOut,size_t txBufSize) = 0;
+	virtual void nullSelect(int32_t timeOut) = 0;
 
 	virtual int32_t receive(void *dest, uint32_t maxLen) = 0;
 	virtual int32_t send(const void *data, uint32_t dataLen) = 0;
+	virtual void	close(void) = 0;
+	virtual bool	wouldBlock(void) = 0;
+	virtual bool	inProgress(void) = 0;
 
 	// Not sure what this is, but it's in the original code so making it available now.
 	virtual void disableNaglesAlgorithm(void) = 0;

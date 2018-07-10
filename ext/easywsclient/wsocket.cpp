@@ -85,17 +85,28 @@ public:
 
 	virtual ~WsocketImpl(void)
 	{
-
+		close();
 	}
 
-	virtual void nullSelect(uint32_t timeOut) override final
+	virtual void nullSelect(int32_t timeout) override final
 	{
-
+		timeval tv = { timeout / 1000, (timeout % 1000) * 1000 };
+		::select(0, NULL, NULL, NULL, &tv);
 	}
 
-	virtual void select(uint32_t timeOut, size_t txBufSize) override final
+	virtual void select(int32_t timeout, size_t txBufSize) override final
 	{
-
+		fd_set rfds;
+		fd_set wfds;
+		timeval tv = { timeout / 1000, (timeout % 1000) * 1000 };
+		FD_ZERO(&rfds);
+		FD_ZERO(&wfds);
+		FD_SET(mSocket, &rfds);
+		if (txBufSize) 
+		{ 
+			FD_SET(mSocket, &wfds);
+		}
+		::select(int(mSocket) + 1, &rfds, &wfds, 0, timeout > 0 ? &tv : 0);
 	}
 
 	virtual int32_t receive(void *dest, uint32_t maxLen) override final
@@ -132,6 +143,26 @@ public:
 	{
 		return mSocket != INVALID_SOCKET;
 	}
+
+	virtual void close(void) override final
+	{
+		if (mSocket)
+		{
+			closesocket(mSocket);
+		}
+		mSocket = 0;
+	}
+
+	virtual bool	wouldBlock(void) override final
+	{
+		return socketerrno == SOCKET_EWOULDBLOCK;
+	}
+
+	virtual bool	inProgress(void) override final
+	{
+		return socketerrno == SOCKET_EAGAIN_EINPROGRESS;
+	}
+
 
 	socket_t hostname_connect(const char *hostname, int port)
 	{

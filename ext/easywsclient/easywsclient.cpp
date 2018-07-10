@@ -9,115 +9,11 @@
 #include "wplatform.h"
 #include "wsocket.h"
 
-#ifdef _WIN32
-#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
-#define _CRT_SECURE_NO_WARNINGS // _CRT_SECURE_NO_WARNINGS for sscanf errors in MSVC2013 Express
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <fcntl.h>
-#include <WinSock2.h>
-#include <WS2tcpip.h>
-#pragma comment( lib, "ws2_32" )
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <io.h>
-#ifndef _SSIZE_T_DEFINED
-typedef int ssize_t;
-#define _SSIZE_T_DEFINED
-#endif
-#ifndef _SOCKET_T_DEFINED
-typedef SOCKET socket_t;
-#define _SOCKET_T_DEFINED
-#endif
-#if _MSC_VER >=1600
-// vs2010 or later
-#include <stdint.h>
-#else
-typedef __int8 int8_t;
-typedef unsigned __int8 uint8_t;
-typedef __int32 int32_t;
-typedef unsigned __int32 uint32_t;
-typedef __int64 int64_t;
-typedef unsigned __int64 uint64_t;
-#endif
-#define socketerrno WSAGetLastError()
-#define SOCKET_EAGAIN_EINPROGRESS WSAEINPROGRESS
-#define SOCKET_EWOULDBLOCK WSAEWOULDBLOCK
-#else
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/tcp.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <stdint.h>
-#ifndef _SOCKET_T_DEFINED
-typedef int socket_t;
-#define _SOCKET_T_DEFINED
-#endif
-#ifndef INVALID_SOCKET
-#define INVALID_SOCKET (-1)
-#endif
-#ifndef SOCKET_ERROR
-#define SOCKET_ERROR   (-1)
-#endif
-#define closesocket(s) ::close(s)
-#include <errno.h>
-#define socketerrno errno
-#define SOCKET_EAGAIN_EINPROGRESS EAGAIN
-#define SOCKET_EWOULDBLOCK EWOULDBLOCK
-#endif
 
 using easywsclient::Callback_Imp;
 using easywsclient::BytesCallback_Imp;
 
 namespace { // private module-only namespace
-
-socket_t hostname_connect(const std::string& hostname, int port) 
-{
-	addrinfo hints;
-	addrinfo *result;
-	addrinfo *p;
-	int ret;
-	socket_t sockfd = INVALID_SOCKET;
-	char sport[16];
-	memset(&hints, 0, sizeof(hints));
-
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	wplatform::stringFormat(sport, 16, "%d", port);
-
-	if ((ret = getaddrinfo(hostname.c_str(), sport, &hints, &result)) != 0)
-	{
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
-		return 1;
-	}
-	for(p = result; p != NULL; p = p->ai_next)
-	{
-		sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-		if (sockfd == INVALID_SOCKET) 
-		{
-			continue; 
-		}
-		if (connect(sockfd, p->ai_addr, p->ai_addrlen) != SOCKET_ERROR) 
-		{
-			break;
-		}
-		closesocket(sockfd);
-		sockfd = INVALID_SOCKET;
-	}
-	freeaddrinfo(result);
-	return sockfd;
-}
-
 
 class _RealWebSocket : public easywsclient::WebSocket
 {
@@ -165,11 +61,11 @@ class _RealWebSocket : public easywsclient::WebSocket
 	std::vector<uint8_t> txbuf;			// transmit buffer
 	std::vector<uint8_t> receivedData;	// received data
 
-	socket_t			sockfd;
+	wsocket::Wsocket	*sockfd{ nullptr };
 	readyStateValues	readyState;
 	bool				useMask;
 
-	_RealWebSocket(socket_t sockfd, bool useMask) : sockfd(sockfd), readyState(OPEN), useMask(useMask) 
+	_RealWebSocket(wsocket::Wsocket *_sockfd, bool useMask) : sockfd(_sockfd), readyState(OPEN), useMask(useMask) 
 	{
 	}
 
@@ -184,33 +80,25 @@ class _RealWebSocket : public easywsclient::WebSocket
 		{
 			if (timeout > 0) 
 			{
-				timeval tv = { timeout/1000, (timeout%1000) * 1000 };
-				select(0, NULL, NULL, NULL, &tv);
+				sockfd->nullSelect(timeout);
 			}
 			return;
 		}
 		if (timeout != 0) 
 		{
-			fd_set rfds;
-			fd_set wfds;
-			timeval tv = { timeout/1000, (timeout%1000) * 1000 };
-			FD_ZERO(&rfds);
-			FD_ZERO(&wfds);
-			FD_SET(sockfd, &rfds);
-			if (txbuf.size()) { FD_SET(sockfd, &wfds); }
-			select(sockfd + 1, &rfds, &wfds, 0, timeout > 0 ? &tv : 0);
+			sockfd->select(timeout, txbuf.size());
 		}
 		while (true) 
 		{
 			// FD_ISSET(0, &rfds) will be true
 			int N = rxbuf.size();
-			ssize_t ret;
+			size_t ret;
 			rxbuf.resize(N + 1500);
-			ret = recv(sockfd, (char*)&rxbuf[0] + N, 1500, 0);
+			ret = sockfd->receive(&rxbuf[0] + N, 1500);
 			if (false) 
 			{ 
 			}
-			else if (ret < 0 && (socketerrno == SOCKET_EWOULDBLOCK || socketerrno == SOCKET_EAGAIN_EINPROGRESS)) 
+			else if (ret < 0 && (sockfd->wouldBlock()  || sockfd->inProgress())) 
 			{
 				rxbuf.resize(N);
 				break;
@@ -218,7 +106,7 @@ class _RealWebSocket : public easywsclient::WebSocket
 			else if (ret <= 0) 
 			{
 				rxbuf.resize(N);
-				closesocket(sockfd);
+				sockfd->close();
 				readyState = CLOSED;
 				fputs(ret < 0 ? "Connection error!\n" : "Connection closed!\n", stderr);
 				break;
@@ -231,17 +119,17 @@ class _RealWebSocket : public easywsclient::WebSocket
 
 		while (txbuf.size()) 
 		{
-			int ret = ::send(sockfd, (char*)&txbuf[0], txbuf.size(), 0);
+			int ret = sockfd->send(&txbuf[0], txbuf.size());
 			if (false) 
 			{ 
 			} // ??
-			else if (ret < 0 && (socketerrno == SOCKET_EWOULDBLOCK || socketerrno == SOCKET_EAGAIN_EINPROGRESS)) 
+			else if (ret < 0 && (sockfd->wouldBlock() || sockfd->inProgress())) 
 			{
 				break;
 			}
 			else if (ret <= 0) 
 			{
-				closesocket(sockfd);
+				sockfd->close();
 				readyState = CLOSED;
 				fputs(ret < 0 ? "Connection error!\n" : "Connection closed!\n", stderr);
 				break;
@@ -253,7 +141,7 @@ class _RealWebSocket : public easywsclient::WebSocket
 		}
 		if (!txbuf.size() && readyState == CLOSING) 
 		{
-			closesocket(sockfd);
+			sockfd->close();
 			readyState = CLOSED;
 		}
 	}
@@ -540,8 +428,8 @@ easywsclient::WebSocket::pointer from_url(const std::string& url, bool useMask, 
 		return NULL;
 	}
 	//fprintf(stderr, "easywsclient: connecting: host=%s port=%d path=/%s\n", host, port, path);
-	socket_t sockfd = hostname_connect(host, port);
-	if (sockfd == INVALID_SOCKET) 
+	wsocket::Wsocket *sockfd = wsocket::Wsocket::create(host, port);
+	if (sockfd == nullptr) 
 	{
 		fprintf(stderr, "Unable to connect to %s:%d\n", host, port);
 		return NULL;
@@ -552,35 +440,35 @@ easywsclient::WebSocket::pointer from_url(const std::string& url, bool useMask, 
 		int status;
 		int i;
 		wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path); 
-		::send(sockfd, line, strlen(line), 0);
+		sockfd->send(line, strlen(line));
 		if (port == 80) 
 		{
 			wplatform::stringFormat(line, 256, "Host: %s\r\n", host); 
-			::send(sockfd, line, strlen(line), 0);
+			sockfd->send(line, strlen(line));
 		}
 		else 
 		{
 			wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port); 
-			::send(sockfd, line, strlen(line), 0);
+			sockfd->send(line, strlen(line));
 		}
 		wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n"); 
-		::send(sockfd, line, strlen(line), 0);
+		sockfd->send(line, strlen(line));
 		wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n"); 
-		::send(sockfd, line, strlen(line), 0);
+		sockfd->send(line, strlen(line));
 		if (!origin.empty()) 
 		{
 			wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin.c_str()); 
-			::send(sockfd, line, strlen(line), 0);
+			sockfd->send(line, strlen(line));
 		}
 		wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n"); 
-		::send(sockfd, line, strlen(line), 0);
+		sockfd->send(line, strlen(line));
 		wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n"); 
-		::send(sockfd, line, strlen(line), 0);
+		sockfd->send(line, strlen(line));
 		wplatform::stringFormat(line, 256, "\r\n"); 
-		::send(sockfd, line, strlen(line), 0);
+		sockfd->send(line, strlen(line));
 		for (i = 0; i < 2 || (i < 255 && line[i-2] != '\r' && line[i-1] != '\n'); ++i) 
 		{ 
-			if (recv(sockfd, line+i, 1, 0) == 0) 
+			if ( sockfd->receive(line+i, 1) == 0) 
 			{ 
 				return NULL; 
 			} 
@@ -601,7 +489,7 @@ easywsclient::WebSocket::pointer from_url(const std::string& url, bool useMask, 
 		{
 			for (i = 0; i < 2 || (i < 255 && line[i-2] != '\r' && line[i-1] != '\n'); ++i) 
 			{ 
-				if (recv(sockfd, line+i, 1, 0) == 0) 
+				if (sockfd->receive(line+i, 1) == 0) 
 				{ 
 					return NULL; 
 				} 
@@ -612,14 +500,7 @@ easywsclient::WebSocket::pointer from_url(const std::string& url, bool useMask, 
 			}
 		}
 	}
-	int flag = 1;
-	setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(flag)); // Disable Nagle's algorithm
-#ifdef _WIN32
-	u_long on = 1;
-	ioctlsocket(sockfd, FIONBIO, &on);
-#else
-	fcntl(sockfd, F_SETFL, O_NONBLOCK);
-#endif
+	sockfd->disableNaglesAlgorithm();
 	//fprintf(stderr, "Connected to: %s\n", url.c_str());
 	return easywsclient::WebSocket::pointer(new _RealWebSocket(sockfd, useMask));
 }
