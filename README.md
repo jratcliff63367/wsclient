@@ -1,6 +1,16 @@
-# websockets
-This project is just a copy of websocketspp with non-boost ASIO such that it builds for windows and linux out of the box
+# WSCLIENT
 
+This project is a work of easywsclient which is a simple websockets compatible client
+
+The purpose of this fork is to add support for a server mode as well.
+
+To build for windows you first need CMAKE installed on your machine.
+
+Then run 'build_win64.bat' or 'generate_projects.bat' to create the Visual Studio Solution and project files
+
+To build for Linux you need CMAKE installed on your machine.
+
+Then run 'build_linux64.sh' or 'generate_projects.sh'
 
 Note: To build this on Linux you need 'ncurses' installed.
 If you do not already have 'ncurses' installed you will get a compile error

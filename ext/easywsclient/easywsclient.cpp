@@ -406,20 +406,17 @@ namespace easywsclient
 			sendData(wsheader_type::PING, nullptr, 0);
 		}
 
-		void send(const std::string& message)
+		virtual void sendText(const char *str) override final
 		{
-			sendData(wsheader_type::TEXT_FRAME, message.size() ? &message[0] : nullptr, message.size());
+			size_t len = str ? strlen(str) : 0;
+			sendData(wsheader_type::TEXT_FRAME, str, len);
 		}
 
-		void sendBinary(const std::string& message)
+		virtual void sendBinary(const void *data, uint32_t dataLen) override final
 		{
-			sendData(wsheader_type::BINARY_FRAME, message.size() ? &message[0] : nullptr, message.size());
+			sendData(wsheader_type::BINARY_FRAME, data, dataLen);
 		}
 
-		void sendBinary(const std::vector<uint8_t>& message)
-		{
-			sendData(wsheader_type::BINARY_FRAME, message.size() ? &message[0] : nullptr, message.size());
-		}
 
 		void sendData(wsheader_type::opcode_type type,	// Type of data we are sending
 					  const void *messageData,			// The optional message data (this can be null)

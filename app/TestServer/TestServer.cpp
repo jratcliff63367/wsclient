@@ -32,8 +32,8 @@ int main()
 
 	easywsclient::WebSocket *ws = easywsclient::WebSocket::create("ws://localhost:9002");
 	assert(ws);
-	ws->send("goodbye");
-	ws->send("hello");
+	ws->sendText("goodbye");
+	ws->sendText("hello");
 	while (ws->getReadyState() != WebSocket::CLOSED) 
 	{
 		ws->poll(nullptr,1);

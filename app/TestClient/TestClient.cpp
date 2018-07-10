@@ -4,6 +4,7 @@
 
 #include "easywsclient.hpp"
 #include "InputLine.h"
+#include <stdio.h>
 
 class ReceiveData : public easywsclient::WebSocketCallback
 {
@@ -42,7 +43,7 @@ int main()
 			mode = getInputLine(buffer, sizeof(buffer), len);
 			if (mode == InputMode::ENTER)
 			{
-				ws->send(std::string(buffer));
+				ws->sendText(buffer);
 				len = 0;
 			}
 			ws->poll(&rd,1); // poll the socket connection
