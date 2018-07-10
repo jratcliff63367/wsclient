@@ -119,48 +119,6 @@ socket_t hostname_connect(const std::string& hostname, int port)
 }
 
 
-class _DummyWebSocket : public easywsclient::WebSocket
-{
-  public:
-	virtual void poll(int timeout) override final
-	{ 
-	}
-
-	virtual void send(const std::string& message) override final
-	{ 
-	}
-
-	void sendBinary(const std::string& message) 
-	{ 
-	}
-
-	void sendBinary(const std::vector<uint8_t>& message) 
-	{ 
-	}
-
-	void sendPing() 
-	{ 
-	}
-	
-	void close() 
-	{ 
-	} 
-
-	readyStateValues getReadyState() const 
-	{ 
-		return CLOSED; 
-	}
-
-	void _dispatch(Callback_Imp & callable) 
-	{ 
-	}
-
-	void _dispatchBinary(BytesCallback_Imp& callable) 
-	{ 
-	}
-};
-
-
 class _RealWebSocket : public easywsclient::WebSocket
 {
   public:
@@ -673,21 +631,9 @@ easywsclient::WebSocket::pointer from_url(const std::string& url, bool useMask, 
 namespace easywsclient 
 {
 
-WebSocket::pointer WebSocket::create_dummy() 
+WebSocket::pointer WebSocket::from_url(const std::string& url, const std::string& origin,bool useMask) 
 {
-	static pointer dummy = pointer(new _DummyWebSocket);
-	return dummy;
-}
-
-
-WebSocket::pointer WebSocket::from_url(const std::string& url, const std::string& origin) 
-{
-	return ::from_url(url, true, origin);
-}
-
-WebSocket::pointer WebSocket::from_url_no_mask(const std::string& url, const std::string& origin) 
-{
-	return ::from_url(url, false, origin);
+	return ::from_url(url, useMask, origin);
 }
 
 void socketStartup(void)
