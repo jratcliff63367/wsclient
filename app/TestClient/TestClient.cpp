@@ -2,7 +2,7 @@
 #ifdef _MSC_VER
 #endif
 
-#include "easywsclient.hpp"
+#include "easywsclient.h"
 #include "InputLine.h"
 #include <stdio.h>
 

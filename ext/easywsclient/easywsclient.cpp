@@ -3,7 +3,7 @@
 #include <string>
 #include <assert.h>
 
-#include "easywsclient.hpp"
+#include "easywsclient.h"
 #include "wplatform.h"
 #include "wsocket.h"
 #include "SimpleBuffer.h"

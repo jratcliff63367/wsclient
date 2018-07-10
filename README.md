@@ -1,6 +1,6 @@
 # WSCLIENT
 
-This project is a work of easywsclient which is a simple websockets compatible client
+This project is a fork of easywsclient which is a simple websockets compatible client
 
 The purpose of this fork is to add support for a server mode as well.
 
