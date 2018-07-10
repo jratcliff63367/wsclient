@@ -16,17 +16,21 @@ namespace easywsclient {
 struct Callback_Imp { virtual void operator()(const std::string& message) = 0; };
 struct BytesCallback_Imp { virtual void operator()(const std::vector<uint8_t>& message) = 0; };
 
-class WebSocket {
+class WebSocket 
+{
   public:
-    typedef WebSocket * pointer;
-    typedef enum readyStateValues { CLOSING, CLOSED, CONNECTING, OPEN } readyStateValues;
+    enum readyStateValues 
+	{ 
+		CLOSING, 
+		CLOSED, 
+		CONNECTING, 
+		OPEN 
+	};
 
     // Factories:
-    static pointer create_dummy();
-    static pointer from_url(const std::string& url, const std::string& origin = std::string(),bool useMask=true);
+    static WebSocket *create(const char *url, const char *origin="",bool useMask=true);
 
     // Interfaces:
-    virtual ~WebSocket() { }
     virtual void poll(int timeout = 0) = 0; // timeout in milliseconds
     virtual void send(const std::string& message) = 0;
     virtual void sendBinary(const std::string& message) = 0;
@@ -61,7 +65,13 @@ class WebSocket {
         _dispatchBinary(callback);
     }
 
+	virtual void release(void) = 0;
+
   protected:
+	  virtual ~WebSocket(void)
+	  {
+
+	  }
     virtual void _dispatch(Callback_Imp& callable) = 0;
     virtual void _dispatchBinary(BytesCallback_Imp& callable) = 0;
 };

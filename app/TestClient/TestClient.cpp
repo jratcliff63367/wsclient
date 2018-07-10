@@ -8,7 +8,7 @@
 int main()
 {
 	easywsclient::socketStartup();
-	easywsclient::WebSocket *ws = easywsclient::WebSocket::from_url("ws://localhost:3009");
+	easywsclient::WebSocket *ws = easywsclient::WebSocket::create("ws://localhost:3009");
 	if (ws)
 	{
 		char buffer[512];
@@ -24,8 +24,19 @@ int main()
 				len = 0;
 			}
 			ws->poll(1); // poll the socket connection
+
+			ws->dispatch([&](const std::string& data)
+			{
+				printf("Got ASCII message: %s\r\n", data.c_str());
+			});
+
+
+			ws->dispatchBinary([&](const std::vector<uint8_t>& data)
+			{
+				printf("Got binary data: %d bytes long\r\n", int(data.size()));
+			});
 		}
-		ws->close();
+		ws->release();
 	}
 	easywsclient::socketShutdown();
 

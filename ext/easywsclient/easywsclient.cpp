@@ -13,9 +13,10 @@
 using easywsclient::Callback_Imp;
 using easywsclient::BytesCallback_Imp;
 
-namespace { // private module-only namespace
+namespace easywsclient
+{ // private module-only namespace
 
-class _RealWebSocket : public easywsclient::WebSocket
+class WebSocketImpl : public easywsclient::WebSocket
 {
   public:
 	// http://tools.ietf.org/html/rfc6455#section-5.2  Base Framing Protocol
@@ -65,8 +66,26 @@ class _RealWebSocket : public easywsclient::WebSocket
 	readyStateValues	readyState;
 	bool				useMask;
 
-	_RealWebSocket(wsocket::Wsocket *_sockfd, bool useMask) : sockfd(_sockfd), readyState(OPEN), useMask(useMask) 
+	WebSocketImpl(wsocket::Wsocket *_sockfd, bool useMask) : sockfd(_sockfd), readyState(OPEN), useMask(useMask) 
 	{
+	}
+
+	virtual ~WebSocketImpl(void)
+	{
+		close();
+		while (readyState != CLOSED)
+		{
+			poll(1);
+		}
+		if (sockfd)
+		{
+			sockfd->release();
+		}
+	}
+
+	virtual void release(void) override final
+	{
+		delete this;
 	}
 
 	readyStateValues getReadyState() const 
@@ -386,49 +405,51 @@ class _RealWebSocket : public easywsclient::WebSocket
 
 };
 
-
-easywsclient::WebSocket::pointer from_url(const std::string& url, bool useMask, const std::string& origin) 
+WebSocket *WebSocket::create(const char *_url, const char *_origin,bool useMask)
 {
+	std::string url(_url);
+	std::string origin(_origin);
+
 	char host[128];
 	int port;
 	char path[128];
-	if (url.size() >= 128) 
+	if (url.size() >= 128)
 	{
-	  fprintf(stderr, "ERROR: url size limit exceeded: %s\n", url.c_str());
-	  return NULL;
+		fprintf(stderr, "ERROR: url size limit exceeded: %s\n", url.c_str());
+		return NULL;
 	}
-	if (origin.size() >= 200) 
+	if (origin.size() >= 200)
 	{
-	  fprintf(stderr, "ERROR: origin size limit exceeded: %s\n", origin.c_str());
-	  return NULL;
+		fprintf(stderr, "ERROR: origin size limit exceeded: %s\n", origin.c_str());
+		return NULL;
 	}
-	if (false) 
-	{ 
-	}
-	else if (sscanf(url.c_str(), "ws://%[^:/]:%d/%s", host, &port, path) == 3) 
+	if (false)
 	{
 	}
-	else if (sscanf(url.c_str(), "ws://%[^:/]/%s", host, path) == 2) 
+	else if (sscanf(url.c_str(), "ws://%[^:/]:%d/%s", host, &port, path) == 3)
+	{
+	}
+	else if (sscanf(url.c_str(), "ws://%[^:/]/%s", host, path) == 2)
 	{
 		port = 80;
 	}
-	else if (sscanf(url.c_str(), "ws://%[^:/]:%d", host, &port) == 2) 
+	else if (sscanf(url.c_str(), "ws://%[^:/]:%d", host, &port) == 2)
 	{
 		path[0] = '\0';
 	}
-	else if (sscanf(url.c_str(), "ws://%[^:/]", host) == 1) 
+	else if (sscanf(url.c_str(), "ws://%[^:/]", host) == 1)
 	{
 		port = 80;
 		path[0] = '\0';
 	}
-	else 
+	else
 	{
 		fprintf(stderr, "ERROR: Could not parse WebSocket url: %s\n", url.c_str());
 		return NULL;
 	}
 	//fprintf(stderr, "easywsclient: connecting: host=%s port=%d path=/%s\n", host, port, path);
 	wsocket::Wsocket *sockfd = wsocket::Wsocket::create(host, port);
-	if (sockfd == nullptr) 
+	if (sockfd == nullptr)
 	{
 		fprintf(stderr, "Unable to connect to %s:%d\n", host, port);
 		return NULL;
@@ -438,82 +459,71 @@ easywsclient::WebSocket::pointer from_url(const std::string& url, bool useMask, 
 		char line[256];
 		int status;
 		int i;
-		wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path); 
+		wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path);
 		sockfd->send(line, strlen(line));
-		if (port == 80) 
+		if (port == 80)
 		{
-			wplatform::stringFormat(line, 256, "Host: %s\r\n", host); 
+			wplatform::stringFormat(line, 256, "Host: %s\r\n", host);
 			sockfd->send(line, strlen(line));
 		}
-		else 
+		else
 		{
-			wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port); 
+			wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port);
 			sockfd->send(line, strlen(line));
 		}
-		wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n"); 
+		wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n");
 		sockfd->send(line, strlen(line));
-		wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n"); 
+		wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n");
 		sockfd->send(line, strlen(line));
-		if (!origin.empty()) 
+		if (!origin.empty())
 		{
-			wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin.c_str()); 
+			wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin.c_str());
 			sockfd->send(line, strlen(line));
 		}
-		wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n"); 
+		wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n");
 		sockfd->send(line, strlen(line));
-		wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n"); 
+		wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n");
 		sockfd->send(line, strlen(line));
-		wplatform::stringFormat(line, 256, "\r\n"); 
+		wplatform::stringFormat(line, 256, "\r\n");
 		sockfd->send(line, strlen(line));
-		for (i = 0; i < 2 || (i < 255 && line[i-2] != '\r' && line[i-1] != '\n'); ++i) 
-		{ 
-			if ( sockfd->receive(line+i, 1) == 0) 
-			{ 
-				return NULL; 
-			} 
+		for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
+		{
+			if (sockfd->receive(line + i, 1) == 0)
+			{
+				return NULL;
+			}
 		}
 		line[i] = 0;
-		if (i == 255) 
-		{ 
-			fprintf(stderr, "ERROR: Got invalid status line connecting to: %s\n", url.c_str()); 
-			return NULL; 
+		if (i == 255)
+		{
+			fprintf(stderr, "ERROR: Got invalid status line connecting to: %s\n", url.c_str());
+			return NULL;
 		}
-		if (sscanf(line, "HTTP/1.1 %d", &status) != 1 || status != 101) 
-		{ 
-			fprintf(stderr, "ERROR: Got bad status connecting to %s: %s", url.c_str(), line); 
-			return NULL; 
+		if (sscanf(line, "HTTP/1.1 %d", &status) != 1 || status != 101)
+		{
+			fprintf(stderr, "ERROR: Got bad status connecting to %s: %s", url.c_str(), line);
+			return NULL;
 		}
 		// TODO: verify response headers,
-		while (true) 
+		while (true)
 		{
-			for (i = 0; i < 2 || (i < 255 && line[i-2] != '\r' && line[i-1] != '\n'); ++i) 
-			{ 
-				if (sockfd->receive(line+i, 1) == 0) 
-				{ 
-					return NULL; 
-				} 
+			for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
+			{
+				if (sockfd->receive(line + i, 1) == 0)
+				{
+					return NULL;
+				}
 			}
-			if (line[0] == '\r' && line[1] == '\n') 
-			{ 
-				break; 
+			if (line[0] == '\r' && line[1] == '\n')
+			{
+				break;
 			}
 		}
 	}
 	sockfd->disableNaglesAlgorithm();
-	//fprintf(stderr, "Connected to: %s\n", url.c_str());
-	return easywsclient::WebSocket::pointer(new _RealWebSocket(sockfd, useMask));
-}
 
-} // end of module-only namespace
-
-
-
-namespace easywsclient 
-{
-
-WebSocket::pointer WebSocket::from_url(const std::string& url, const std::string& origin,bool useMask) 
-{
-	return ::from_url(url, useMask, origin);
+	auto ret = new WebSocketImpl(sockfd, useMask);
+	return static_cast<WebSocket *>(ret);
 }
 
 void socketStartup(void)

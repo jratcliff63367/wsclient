@@ -14,12 +14,10 @@
 #include <string>
 
 using easywsclient::WebSocket;
-static WebSocket::pointer ws = NULL;
 
 void handle_message(const std::string & message)
 {
 	printf(">>> %s\n", message.c_str());
-	if (message == "world") { ws->close(); }
 }
 
 int main()
@@ -36,7 +34,7 @@ int main()
 	}
 #endif
 
-	ws = WebSocket::from_url("ws://localhost:9002");
+	easywsclient::WebSocket *ws = easywsclient::WebSocket::create("ws://localhost:9002");
 	assert(ws);
 	ws->send("goodbye");
 	ws->send("hello");
@@ -45,7 +43,7 @@ int main()
 		ws->poll();
 		ws->dispatch(handle_message);
 	}
-	delete ws;
+	ws->release();
 #ifdef _WIN32
 	WSACleanup();
 #endif
