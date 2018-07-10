@@ -92,9 +92,8 @@ class _RealWebSocket : public easywsclient::WebSocket
 		{
 			// FD_ISSET(0, &rfds) will be true
 			int N = rxbuf.size();
-			size_t ret;
 			rxbuf.resize(N + 1500);
-			ret = sockfd->receive(&rxbuf[0] + N, 1500);
+			int32_t ret = sockfd->receive((char *)&rxbuf[0] + N, 1500);
 			if (false) 
 			{ 
 			}

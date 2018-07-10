@@ -111,7 +111,11 @@ public:
 
 	virtual int32_t receive(void *dest, uint32_t maxLen) override final
 	{
-		int32_t ret = ::recv(mSocket, (char *)dest, int(maxLen), 0);
+		int32_t ret = -1;
+		if (mSocket)
+		{
+			ret = ::recv(mSocket, (char *)dest, int(maxLen), 0);
+		}
 		return ret;
 	}
 
