@@ -1,7 +1,7 @@
 #include "SimpleBuffer.h"
 #include <stdlib.h>
 #include <string.h>
-
+#include <assert.h>
 
 namespace simplebuffer
 {
@@ -97,7 +97,7 @@ namespace simplebuffer
 			return mLen;
 		}
 
-		virtual void shrink(uint32_t removeLen) override final
+		virtual void consume(uint32_t removeLen) override final
 		{
 			if (removeLen >= mLen)
 			{
@@ -110,6 +110,18 @@ namespace simplebuffer
 				memcpy(mBuffer, &mBuffer[startIndex], keepBytes);
 				mLen = keepBytes;
 			}
+		}
+
+		// Make sure the buffer is large enough for this capacity; return the *current* read location in the buffer
+		virtual	uint8_t	*confirmCapacity(uint32_t capacity) override final
+		{
+			uint32_t available = mMaxLen - mLen;
+			if (capacity > available)
+			{
+				// we need to grow the buffer!
+				assert(0); // not yet implemented...
+			}
+			return &mBuffer[mLen];
 		}
 
 	private:

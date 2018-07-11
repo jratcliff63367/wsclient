@@ -10,6 +10,7 @@
 
 #define DEFAULT_TRANSMIT_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 #define DEFAULT_RECEIVE_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
+#define DEFAULT_MAX_READ_SIZE (1024*16)			// Maximum size of a single read operation
 
 namespace easywsclient
 { // private module-only namespace
@@ -39,21 +40,21 @@ namespace easywsclient
 		// +---------------------------------------------------------------+
 		struct wsheader_type
 		{
-			uint32_t	header_size;
-			bool		fin;
-			bool		mask;
+			uint32_t	header_size;		// Size of the header
+			bool		fin;				// Whether or not this is the final block
+			bool		mask;				// whether or not this frame uses masking
 			enum opcode_type
 			{
-				CONTINUATION = 0x0,
-				TEXT_FRAME = 0x1,
-				BINARY_FRAME = 0x2,
-				CLOSE = 8,
-				PING = 9,
-				PONG = 0xa,
+				CONTINUATION	= 0,
+				TEXT_FRAME		= 1,
+				BINARY_FRAME	= 2,
+				CLOSE			= 8,
+				PING			= 9,
+				PONG			= 10
 			} opcode;
-			int			N0;
+			int32_t		N0;
 			uint64_t	N;
-			uint8_t		masking_key[4];
+			uint8_t		masking_key[4];		// Masking key used for this frame
 		};
 
 		WebSocketImpl(const char *url,const char *origin, bool useMask) : mReadyState(OPEN), mUseMask(useMask)
@@ -238,10 +239,7 @@ namespace easywsclient
 				int N = int(mReceiveBuffer.size());
 				mReceiveBuffer.resize(N + 1500);
 				int32_t ret = mSocket->receive((char *)&mReceiveBuffer[0] + N, 1500);
-				if (false)
-				{
-				}
-				else if (ret < 0 && (mSocket->wouldBlock() || mSocket->inProgress()))
+				if (ret < 0 && (mSocket->wouldBlock() || mSocket->inProgress()))
 				{
 					mReceiveBuffer.resize(N);
 					break;
@@ -281,7 +279,7 @@ namespace easywsclient
 				}
 				else
 				{
-					mTransmitBuffer->shrink(ret); // shrink the transmit buffer by the number of bytes we managed to send..
+					mTransmitBuffer->consume(ret); // shrink the transmit buffer by the number of bytes we managed to send..
 				}
 			}
 			if (!mTransmitBuffer->getSize() && mReadyState == CLOSING)
@@ -301,14 +299,21 @@ namespace easywsclient
 			while (true)
 			{
 				wsheader_type ws;
-				if (mReceiveBuffer.size() < 2) { return; /* Need at least 2 */ }
+				if (mReceiveBuffer.size() < 2) 
+				{ 
+					return; /* Need at least 2 */ 
+				}
 				const uint8_t * data = (uint8_t *)&mReceiveBuffer[0]; // peek, but don't consume
-				ws.fin = (data[0] & 0x80) == 0x80;
-				ws.opcode = (wsheader_type::opcode_type) (data[0] & 0x0f);
-				ws.mask = (data[1] & 0x80) == 0x80;
-				ws.N0 = (data[1] & 0x7f);
+				ws.fin		= (data[0] & 0x80) == 0x80;
+				ws.opcode	= (wsheader_type::opcode_type) (data[0] & 0x0f);
+				ws.mask		= (data[1] & 0x80) == 0x80;
+				ws.N0		= (data[1] & 0x7f);
 				ws.header_size = 2 + (ws.N0 == 126 ? 2 : 0) + (ws.N0 == 127 ? 8 : 0) + (ws.mask ? 4 : 0);
-				if (mReceiveBuffer.size() < ws.header_size) { return; /* Need: ws.header_size - mReceiveBuffer.size() */ }
+
+				if (mReceiveBuffer.size() < ws.header_size) 
+				{ 
+					return; /* Need: ws.header_size - mReceiveBuffer.size() */ 
+				}
 				int i = 0;
 				if (ws.N0 < 126)
 				{
@@ -350,13 +355,13 @@ namespace easywsclient
 					ws.masking_key[3] = 0;
 				}
 
-				if (mReceiveBuffer.size() < ws.header_size + ws.N) { return; /* Need: ws.header_size+ws.N - mReceiveBuffer.size() */ }
+				if (mReceiveBuffer.size() < ws.header_size + ws.N) 
+				{ 
+					return; /* Need: ws.header_size+ws.N - mReceiveBuffer.size() */ 
+				}
 
 				// We got a whole message, now do something with it:
-				if (false)
-				{
-				}
-				else if (ws.opcode == wsheader_type::TEXT_FRAME
+				if (ws.opcode == wsheader_type::TEXT_FRAME
 					|| ws.opcode == wsheader_type::BINARY_FRAME
 					|| ws.opcode == wsheader_type::CONTINUATION)
 				{
@@ -391,7 +396,9 @@ namespace easywsclient
 						}
 					}
 					std::string pingData(mReceiveBuffer.begin() + ws.header_size, mReceiveBuffer.begin() + ws.header_size + (size_t)ws.N);
+
 					sendData(wsheader_type::PONG, pingData.size() ? &pingData[0] : nullptr, pingData.size());
+
 				}
 				else if (ws.opcode == wsheader_type::PONG)
 				{
