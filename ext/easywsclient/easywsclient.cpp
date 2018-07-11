@@ -1,6 +1,6 @@
-
-#include <vector>
-#include <string>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #include "easywsclient.h"
@@ -60,7 +60,9 @@ namespace easywsclient
 		WebSocketImpl(const char *url,const char *origin, bool useMask) : mReadyState(OPEN), mUseMask(useMask)
 		{
 			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE);
-			mReceivedData = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE);
+			mReceivedData	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE);
+			mReceiveBuffer	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE);
+
 			size_t urlSize = strlen(url);
 			size_t originSize = strlen(origin);
 			char host[128];
@@ -203,6 +205,10 @@ namespace easywsclient
 			{
 				mReceivedData->release();
 			}
+			if (mReceiveBuffer)
+			{
+				mReceiveBuffer->release();
+			}
 			if (mTransmitBuffer)
 			{
 				mTransmitBuffer->release();
@@ -235,18 +241,14 @@ namespace easywsclient
 			}
 			while (true)
 			{
-				// FD_ISSET(0, &rfds) will be true
-				int N = int(mReceiveBuffer.size());
-				mReceiveBuffer.resize(N + 1500);
-				int32_t ret = mSocket->receive((char *)&mReceiveBuffer[0] + N, 1500);
+				uint8_t *rbuffer = mReceiveBuffer->confirmCapacity(DEFAULT_MAX_READ_SIZE);
+				int32_t ret = mSocket->receive(rbuffer, DEFAULT_MAX_READ_SIZE);
 				if (ret < 0 && (mSocket->wouldBlock() || mSocket->inProgress()))
 				{
-					mReceiveBuffer.resize(N);
 					break;
 				}
 				else if (ret <= 0)
 				{
-					mReceiveBuffer.resize(N);
 					mSocket->close();
 					mReadyState = CLOSED;
 					fputs(ret < 0 ? "Connection error!\n" : "Connection closed!\n", stderr);
@@ -254,7 +256,8 @@ namespace easywsclient
 				}
 				else
 				{
-					mReceiveBuffer.resize(N + ret);
+					// Advance the buffer pointer by the number of bytes read
+					mReceiveBuffer->addBuffer(nullptr, ret);
 				}
 			}
 
@@ -295,26 +298,27 @@ namespace easywsclient
 
 		virtual void _dispatchBinary(WebSocketCallback *callback)
 		{
-			// TODO: consider acquiring a lock on mReceiveBuffer...
 			while (true)
 			{
 				wsheader_type ws;
-				if (mReceiveBuffer.size() < 2) 
+				uint32_t dataLen;
+				uint8_t *data = mReceiveBuffer->getData(dataLen);
+
+				if (dataLen < 2) 
 				{ 
-					return; /* Need at least 2 */ 
+					break;
 				}
-				const uint8_t * data = (uint8_t *)&mReceiveBuffer[0]; // peek, but don't consume
 				ws.fin		= (data[0] & 0x80) == 0x80;
 				ws.opcode	= (wsheader_type::opcode_type) (data[0] & 0x0f);
 				ws.mask		= (data[1] & 0x80) == 0x80;
 				ws.N0		= (data[1] & 0x7f);
 				ws.header_size = 2 + (ws.N0 == 126 ? 2 : 0) + (ws.N0 == 127 ? 8 : 0) + (ws.mask ? 4 : 0);
 
-				if (mReceiveBuffer.size() < ws.header_size) 
+				if (dataLen < ws.header_size) 
 				{ 
-					return; /* Need: ws.header_size - mReceiveBuffer.size() */ 
+					break;
 				}
-				int i = 0;
+				int32_t i = 0;
 				if (ws.N0 < 126)
 				{
 					ws.N = ws.N0;
@@ -355,9 +359,9 @@ namespace easywsclient
 					ws.masking_key[3] = 0;
 				}
 
-				if (mReceiveBuffer.size() < ws.header_size + ws.N) 
+				if (dataLen < ws.header_size + ws.N) 
 				{ 
-					return; /* Need: ws.header_size+ws.N - mReceiveBuffer.size() */ 
+					break;
 				}
 
 				// We got a whole message, now do something with it:
@@ -370,20 +374,32 @@ namespace easywsclient
 					{
 						for (size_t j = 0; j != ws.N; ++j)
 						{
-							mReceiveBuffer[j + ws.header_size] ^= ws.masking_key[j & 0x3];
+							data[j + ws.header_size] ^= ws.masking_key[j & 0x3];
 						}
 					}
-					const uint8_t *rb = &mReceiveBuffer[0];
-					mReceivedData->addBuffer(rb + ws.header_size, uint32_t(ws.N));
-					if (ws.fin)
+					// If we are finished and there is no previous received data we can avoid a memory
+					// copy by just calling back directly with this receive buffer
+					if (ws.fin && mReceivedData->getSize() == 0)
 					{
-						if (callback && mReceivedData->getSize() )
+						if (callback )
 						{
-							uint32_t dlen;
-							const void *rdata = mReceivedData->getData(dlen);
-							callback->receiveMessage(rdata,dlen,ws.opcode == wsheader_type::TEXT_FRAME);
+							callback->receiveMessage(data+ws.header_size, uint32_t(ws.N), ws.opcode == wsheader_type::TEXT_FRAME);
 						}
-						mReceivedData->clear();
+					}
+					else
+					{
+						// Add the input data to the receive data frame we are accumulating
+						mReceivedData->addBuffer(data + ws.header_size, uint32_t(ws.N));
+						if (ws.fin)
+						{
+							if (callback && mReceivedData->getSize())
+							{
+								uint32_t dlen;
+								const void *rdata = mReceivedData->getData(dlen);
+								callback->receiveMessage(rdata, dlen, ws.opcode == wsheader_type::TEXT_FRAME);
+							}
+							mReceivedData->clear();
+						}
 					}
 				}
 				else if (ws.opcode == wsheader_type::PING)
@@ -392,13 +408,15 @@ namespace easywsclient
 					{
 						for (size_t j = 0; j != ws.N; ++j)
 						{
-							mReceiveBuffer[j + ws.header_size] ^= ws.masking_key[j & 0x3];
+							data[j + ws.header_size] ^= ws.masking_key[j & 0x3];
 						}
 					}
-					std::string pingData(mReceiveBuffer.begin() + ws.header_size, mReceiveBuffer.begin() + ws.header_size + (size_t)ws.N);
-
-					sendData(wsheader_type::PONG, pingData.size() ? &pingData[0] : nullptr, pingData.size());
-
+					const uint8_t *pingData = nullptr;
+					if (ws.N)
+					{
+						pingData = data + ws.header_size;
+					}
+					sendData(wsheader_type::PONG, pingData, ws.N);
 				}
 				else if (ws.opcode == wsheader_type::PONG)
 				{
@@ -412,8 +430,7 @@ namespace easywsclient
 					fprintf(stderr, "ERROR: Got unexpected WebSocket message.\n");
 					close();
 				}
-
-				mReceiveBuffer.erase(mReceiveBuffer.begin(), mReceiveBuffer.begin() + ws.header_size + (size_t)ws.N);
+				mReceiveBuffer->clear();
 			}
 		}
 
@@ -559,9 +576,9 @@ namespace easywsclient
 		}
 
 	private:
-		std::vector<uint8_t>		mReceiveBuffer;			// receive buffer
-		simplebuffer::SimpleBuffer *mTransmitBuffer{ nullptr };			// transmit buffer
-		simplebuffer::SimpleBuffer	*mReceivedData{ nullptr };	// received data
+		simplebuffer::SimpleBuffer	*mReceiveBuffer{ nullptr };		// receive buffer
+		simplebuffer::SimpleBuffer	*mTransmitBuffer{ nullptr };	// transmit buffer
+		simplebuffer::SimpleBuffer	*mReceivedData{ nullptr };		// received data
 		wsocket::Wsocket			*mSocket{ nullptr };
 		ReadyStateValues			mReadyState{ CLOSED };
 		bool						mUseMask{ true };

@@ -34,10 +34,12 @@ namespace simplebuffer
 			mLen = 0;
 		}
 
-		// Add this data to the current buffer.  If 'data' is null, it doesn't copy any data
+		// Add this data to the current buffer.  If 'data' is null, it doesn't copy any data (assuming it was manually written already)
+		// but does advance the buffer pointer
 		virtual void 		addBuffer(const void *data, uint32_t dataLen) override final
 		{
 			uint32_t available = mMaxLen - mLen; // how many bytes are currently available...
+			// If we are trying to advance past the end of the available buffer space we need to grow the buffer
 			if (dataLen > available) // if there isn't enough room, we need to grow the buffer
 			{
 				// Double the size of buffer
@@ -115,11 +117,28 @@ namespace simplebuffer
 		// Make sure the buffer is large enough for this capacity; return the *current* read location in the buffer
 		virtual	uint8_t	*confirmCapacity(uint32_t capacity) override final
 		{
+			// Compute how many bytes are available in the current buffer
 			uint32_t available = mMaxLen - mLen;
+			// If we are asking for more capacity than is available, we need to grow the buffer
 			if (capacity > available)
 			{
-				// we need to grow the buffer!
-				assert(0); // not yet implemented...
+				mMaxLen = mMaxLen * 2; // first try growing by double the current size...
+				available = mMaxLen - mLen;
+				// If, even after doubling the current size, there still isn't enough room for this capacity
+				// We need to adjust the maximum length to support that capacity request
+				if (available < capacity)
+				{
+					mMaxLen += capacity;
+				}
+				// Allocate a new buffer for the resized data
+				uint8_t *newBuffer = (uint8_t *)malloc(mMaxLen);
+				// If there was any previous data in the old buffer, we copy it
+				if (mLen)
+				{
+					memcpy(newBuffer, mBuffer, mLen);
+				}
+				free(mBuffer);	// Free the old buffer
+				mBuffer = newBuffer;	// Use the new buffer
 			}
 			return &mBuffer[mLen];
 		}
