@@ -417,7 +417,11 @@ namespace easywsclient
 			sendData(wsheader_type::BINARY_FRAME, data, dataLen);
 		}
 
-		void getMaskingKey(uint8_t maskingKey[4])
+		// Just get the high resolution timer as the current masking key
+		// we just take the bottom 32 bits of the current high resolution time
+		// It doesn't have the most entropy in the world, but it's good enough for
+		// this use case and is reasonably fast and portable.
+		inline void getMaskingKey(uint8_t maskingKey[4])
 		{
 			uint64_t seed = wplatform::getRandomTime();
 			memcpy(maskingKey, &seed, 4);
