@@ -3,6 +3,7 @@
 // Simple wrapper for socket access
 // Hides platform specific details of socket access
 #include <stdint.h>
+#include <stdlib.h>
 
 namespace wsocket
 {
@@ -53,4 +54,4 @@ protected:
 };
 
 
-}; // end of wsocket namespace
+} // end of wsocket namespace

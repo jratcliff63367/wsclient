@@ -266,11 +266,8 @@ namespace easywsclient
 			{
 				uint32_t dataLen;
 				const uint8_t *buffer = mTransmitBuffer->getData(dataLen);
-				int ret = mSocket->send(buffer, dataLen);
-				if (false)
-				{
-				} // ??
-				else if (ret < 0 && (mSocket->wouldBlock() || mSocket->inProgress()))
+				int32_t ret = mSocket->send(buffer, dataLen);
+				if (ret < 0 && (mSocket->wouldBlock() || mSocket->inProgress()))
 				{
 					break;
 				}
@@ -574,6 +571,17 @@ namespace easywsclient
 			return ret;
 		}
 
+		// Return the amount of memory being consumed by the pending transmit buffer
+		virtual uint32_t getTransmitBufferSize(void) const override final
+		{
+			return mTransmitBuffer->getSize();
+		}
+
+		// Maximum size of the buffer
+		virtual uint32_t getTransmitBufferMaxSize(void) const override final
+		{
+			return mTransmitBuffer->getMaxBufferSize();
+		}
 
 	private:
 		simplebuffer::SimpleBuffer	*mReceiveBuffer{ nullptr };		// receive buffer

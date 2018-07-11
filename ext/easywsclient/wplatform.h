@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdlib.h>
 
 // Platform specific support functions.
 // Currently just a string formatting function

@@ -1,5 +1,5 @@
 #include "FastXOR.h"
-
+#include <string.h>
 
 namespace fastxor
 {
@@ -33,17 +33,9 @@ void fastXOR(void *data, uint32_t dataLen, uint8_t key[4])
 		{
 			uint64_t mask;
 			uint8_t *storeMask = (uint8_t *)&mask;
-
-			storeMask[0] = key[0];
-			storeMask[1] = key[1];
-			storeMask[2] = key[2];
-			storeMask[3] = key[3];
-
-			storeMask[4] = key[0];
-			storeMask[5] = key[1];
-			storeMask[6] = key[2];
-			storeMask[7] = key[3];
-
+			// Copy the XOR key into the 64 bit mask value
+			memcpy(storeMask, key, 4);
+			memcpy(storeMask + 4, key, 4);
 			uint64_t *scan64 = (uint64_t *)scan;
 			for (uint32_t i = 0; i < blockCount; i++)
 			{

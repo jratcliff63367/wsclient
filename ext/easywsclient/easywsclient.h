@@ -61,6 +61,12 @@ public:
 	// Returns the total memory used by the transmit and receive buffers
 	virtual uint32_t getMemoryUsage(void) const = 0;
 
+	// Return the amount of memory being used by pending transmit frames
+	virtual uint32_t getTransmitBufferSize(void) const = 0;
+
+	// Maximum size of the buffer
+	virtual uint32_t getTransmitBufferMaxSize(void) const = 0;
+
 	// Release the websockets client interface class
 	virtual void release(void) = 0;
 
