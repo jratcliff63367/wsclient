@@ -58,6 +58,9 @@ public:
 	// Retreive the current state of the connection
 	virtual ReadyStateValues getReadyState() const = 0;
 
+	// Returns the total memory used by the transmit and receive buffers
+	virtual uint32_t getMemoryUsage(void) const = 0;
+
 	// Release the websockets client interface class
 	virtual void release(void) = 0;
 

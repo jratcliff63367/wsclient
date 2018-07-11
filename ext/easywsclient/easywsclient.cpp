@@ -7,6 +7,7 @@
 #include "wplatform.h"
 #include "wsocket.h"
 #include "SimpleBuffer.h"
+#include "FastXOR.h"
 
 #define DEFAULT_TRANSMIT_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 #define DEFAULT_RECEIVE_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
@@ -369,13 +370,9 @@ namespace easywsclient
 					|| ws.opcode == wsheader_type::BINARY_FRAME
 					|| ws.opcode == wsheader_type::CONTINUATION)
 				{
-					// TODO: Optimize this!!
 					if (ws.mask)
 					{
-						for (size_t j = 0; j != ws.N; ++j)
-						{
-							data[j + ws.header_size] ^= ws.masking_key[j & 0x3];
-						}
+						fastxor::fastXOR(data + ws.header_size,uint32_t(ws.N), ws.masking_key);
 					}
 					// If we are finished and there is no previous received data we can avoid a memory
 					// copy by just calling back directly with this receive buffer
@@ -406,10 +403,7 @@ namespace easywsclient
 				{
 					if (ws.mask)
 					{
-						for (size_t j = 0; j != ws.N; ++j)
-						{
-							data[j + ws.header_size] ^= ws.masking_key[j & 0x3];
-						}
+						fastxor::fastXOR(data + ws.header_size, uint32_t(ws.N), ws.masking_key);
 					}
 					const uint8_t *pingData = nullptr;
 					if (ws.N)
@@ -546,15 +540,11 @@ namespace easywsclient
 			// If we are using masking then we need to XOR the message by the mask
 			if (mUseMask)
 			{
-				// TODO: This needs to be optimized
 				uint32_t message_offset = mTransmitBuffer->getSize() - uint32_t(message_size);
 				uint32_t dataLen;
 				uint8_t *data = mTransmitBuffer->getData(dataLen);
 				uint8_t *maskData = &data[message_offset];
-				for (uint32_t i = 0; i != message_size; ++i)
-				{
-					maskData[i] ^= masking_key[i & 0x3];
-				}
+				fastxor::fastXOR(maskData, uint32_t(message_size), masking_key);
 			}
 		}
 
@@ -574,6 +564,16 @@ namespace easywsclient
 		{
 			return mSocket ? true : false;
 		}
+
+		// Returns the total memory used by the transmit and receive buffers
+		uint32_t getMemoryUsage(void) const override final
+		{
+			uint32_t ret = mTransmitBuffer->getMaxBufferSize();
+			ret += mReceiveBuffer->getMaxBufferSize();
+			ret += mReceivedData->getMaxBufferSize();
+			return ret;
+		}
+
 
 	private:
 		simplebuffer::SimpleBuffer	*mReceiveBuffer{ nullptr };		// receive buffer

@@ -143,6 +143,11 @@ namespace simplebuffer
 			return &mBuffer[mLen];
 		}
 
+		virtual uint32_t getMaxBufferSize(void) const override final
+		{
+			return mMaxLen;
+		}
+
 	private:
 		uint8_t		*mBuffer{ nullptr };
 		uint32_t	mMaxLen{ 0 };

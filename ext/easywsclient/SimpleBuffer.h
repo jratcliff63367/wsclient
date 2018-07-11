@@ -16,6 +16,8 @@ public:
 
 	virtual uint32_t getSize(void) const = 0;
 
+	virtual uint32_t getMaxBufferSize(void) const = 0;
+
 	// Get the current data buffer.  It can be modified..but...you cannot go beyond
 	// the current length
 	virtual uint8_t *getData(uint32_t &dataLen) const = 0;
