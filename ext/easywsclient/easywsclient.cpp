@@ -9,6 +9,7 @@
 #include "SimpleBuffer.h"
 
 #define DEFAULT_TRANSMIT_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
+#define DEFAULT_RECEIVE_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 
 namespace easywsclient
 { // private module-only namespace
@@ -58,6 +59,7 @@ namespace easywsclient
 		WebSocketImpl(const char *url,const char *origin, bool useMask) : mReadyState(OPEN), mUseMask(useMask)
 		{
 			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE);
+			mReceivedData = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE);
 			size_t urlSize = strlen(url);
 			size_t originSize = strlen(origin);
 			char host[128];
@@ -195,6 +197,10 @@ namespace easywsclient
 			if (mSocket)
 			{
 				mSocket->release();
+			}
+			if (mReceivedData)
+			{
+				mReceivedData->release();
 			}
 			if (mTransmitBuffer)
 			{
@@ -354,6 +360,7 @@ namespace easywsclient
 					|| ws.opcode == wsheader_type::BINARY_FRAME
 					|| ws.opcode == wsheader_type::CONTINUATION)
 				{
+					// TODO: Optimize this!!
 					if (ws.mask)
 					{
 						for (size_t j = 0; j != ws.N; ++j)
@@ -361,15 +368,17 @@ namespace easywsclient
 							mReceiveBuffer[j + ws.header_size] ^= ws.masking_key[j & 0x3];
 						}
 					}
-					mReceivedData.insert(mReceivedData.end(), mReceiveBuffer.begin() + ws.header_size, mReceiveBuffer.begin() + ws.header_size + (size_t)ws.N);// just feed
+					const uint8_t *rb = &mReceiveBuffer[0];
+					mReceivedData->addBuffer(rb + ws.header_size, uint32_t(ws.N));
 					if (ws.fin)
 					{
-						if (callback && !mReceivedData.empty())
+						if (callback && mReceivedData->getSize() )
 						{
-							callback->receiveMessage(&mReceivedData[0], uint32_t(mReceivedData.size()), ws.opcode == wsheader_type::TEXT_FRAME);
+							uint32_t dlen;
+							const void *rdata = mReceivedData->getData(dlen);
+							callback->receiveMessage(rdata,dlen,ws.opcode == wsheader_type::TEXT_FRAME);
 						}
-						mReceivedData.erase(mReceivedData.begin(), mReceivedData.end());
-						std::vector<uint8_t>().swap(mReceivedData);// free memory
+						mReceivedData->clear();
 					}
 				}
 				else if (ws.opcode == wsheader_type::PING)
@@ -545,7 +554,7 @@ namespace easywsclient
 	private:
 		std::vector<uint8_t>		mReceiveBuffer;			// receive buffer
 		simplebuffer::SimpleBuffer *mTransmitBuffer{ nullptr };			// transmit buffer
-		std::vector<uint8_t>		mReceivedData;	// received data
+		simplebuffer::SimpleBuffer	*mReceivedData{ nullptr };	// received data
 		wsocket::Wsocket			*mSocket{ nullptr };
 		ReadyStateValues			mReadyState{ CLOSED };
 		bool						mUseMask{ true };
