@@ -13,7 +13,7 @@ set(wsclient_EXT_ROOT    ${wsclient_ROOT}/ext)
 if (WIN32)
 set(extra_INCLUDE    ${wsclient_ROOT}/ext)
 else()
-set(extra_INCLUDE    ${wsclient_ROOT}/ext/conio-linux)
+set(extra_INCLUDE    ${wsclient_ROOT}/ext)
 endif()
 
 #
@@ -92,8 +92,6 @@ set(Platform_SOURCES
 )
 else()
 set(Platform_SOURCES
-	ext/conio-linux/conio.h
-	ext/conio-linux/conio.c
 )
 endif()
 
@@ -156,7 +154,6 @@ else()
         -lGL
         -lX11
         -lpthread
-        -lncurses
     )
 endif()
 
@@ -186,7 +183,6 @@ else()
         -lGL
         -lX11
         -lpthread
-        -lncurses
     )
 endif()
 

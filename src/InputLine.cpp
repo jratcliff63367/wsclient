@@ -1,57 +1,107 @@
 #include "InputLine.h"
+
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <chrono>
+#include <string.h>
 #include <stdio.h>
-#include <conio.h>
+#include <stdlib.h>
 
-#ifdef _MSC_VER
-#pragma warning(disable:4996)
-#endif
+#define MAX_INPUT 512
 
-
-InputMode getInputLine(char *buf, uint32_t maxLen, uint32_t &len)
+namespace inputline
 {
-	InputMode ret = InputMode::NOTHING;
 
-	if (kbhit())
+class InputLineImpl : public InputLine
+{
+public:
+	InputLineImpl(void)
 	{
-		char c = (char)getch();
-		if (c == 10 || c == 13)
+		mThread = new std::thread([this]()
 		{
-			buf[len] = 0;
-			ret = InputMode::ENTER;
-			printf("\n");
-		}
-		else if (c == 27)
-		{
-			buf[len] = 0;
-			ret = InputMode::ESCAPE;
-		}
-		else if (c == 8)
-		{
-			if (len)
+			while (!mExit)
 			{
-				len--;
-				buf[len] = 0;
-				printf("%c", c);
-				printf(" ");
-				printf("%c", c);
-				ret = InputMode::BACKSPACE;
+				// Not allowed to start inputting a new line of data
+				if (!mHaveNewData)
+				{
+					mInputBuffer[0] = 0;
+					char *ret = fgets(mInputBuffer, sizeof(mInputBuffer), stdin);
+					if (ret && strlen(mInputBuffer))
+					{
+						mHaveNewData = true;
+					}
+				}
+				else
+				{
+					std::this_thread::sleep_for(std::chrono::nanoseconds(1000)); // sleep for 1,000 nanoseconds
+				}
 			}
-		}
-		else if (c >= 32 && c <= 127)
+		});
+	}
+
+	virtual ~InputLineImpl(void)
+	{
+		if (mThread)
 		{
-			if (len < (maxLen - 1))
-			{
-				buf[len] = c;
-				len++;
-				buf[len] = 0;
-				printf("%c", c);
-				ret = InputMode::NEW_CHAR;
-			}
-			else
-			{
-				ret = InputMode::BUFFER_FULL;
-			}
+			mExit = true;
+			mThread->join();
+			delete mThread;
 		}
 	}
-	return ret;
+
+	virtual const char *getInputLine(void) override final
+	{
+		const char *ret = nullptr;
+		if (mHaveNewData)
+		{
+			lock();
+			strcpy(mResultBuffer, mInputBuffer);
+			size_t len = strlen(mResultBuffer);
+			if (len && mResultBuffer[len - 1] == 0x0A)
+			{
+				mResultBuffer[len - 1] = 0;
+			}
+			mHaveNewData = false;
+			unlock();
+			ret = mResultBuffer;
+		}
+
+		return ret;
+	}
+
+	virtual void release(void) override final
+	{
+		delete this;
+	}
+
+
+	void lock(void)
+	{
+		mMutex.lock();
+	}
+
+	void unlock(void)
+	{
+		mMutex.unlock();
+	}
+
+protected:
+	char				mInputBuffer[MAX_INPUT];
+	char				mResultBuffer[MAX_INPUT];
+	std::thread			*mThread{ nullptr };	// Worker thread to get console input
+	std::mutex			mMutex;
+	std::atomic< bool >	mExit{ false };
+	std::atomic< bool > mHaveNewData{ false };
+};
+
+InputLine *InputLine::create(void)
+{
+	auto ret = new InputLineImpl;
+	return static_cast<InputLine *>(ret);
 }
+
+
+}
+
+

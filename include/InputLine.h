@@ -2,17 +2,22 @@
 
 #include <stdint.h>
 
-// Handles input stream
-// Returns true if the user hit 'enter' and we have a buffer of input
-enum class InputMode
+namespace inputline
 {
-	NOTHING,			// No input
-	NEW_CHAR,			// Added a new character
-	ENTER,				// got an enter key
-	ESCAPE,				// Got an escape key
-	BACKSPACE,			// Processed a backspace key
-	BUFFER_FULL			// Got a new char, but buffer is full
+
+class InputLine
+{
+public:
+	static InputLine *create(void);
+	virtual const char *getInputLine(void) = 0;
+	virtual void release(void) = 0;
+protected:
+	virtual ~InputLine(void)
+	{
+
+	}
 };
 
-InputMode getInputLine(char *buffer,uint32_t maxLen,uint32_t &len);
+}
+
 

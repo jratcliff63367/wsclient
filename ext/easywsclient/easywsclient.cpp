@@ -221,12 +221,12 @@ namespace easywsclient
 			delete this;
 		}
 
-		ReadyStateValues getReadyState() const
+		virtual ReadyStateValues getReadyState() const override final
 		{
 			return mReadyState;
 		}
 
-		void poll(WebSocketCallback *callback, int timeout)
+		virtual void poll(WebSocketCallback *callback, int timeout) override final
 		{ // timeout in milliseconds
 			if (mReadyState == CLOSED)
 			{
@@ -425,7 +425,7 @@ namespace easywsclient
 			}
 		}
 
-		void sendPing()
+		virtual void sendPing() override final
 		{
 			sendData(wsheader_type::PING, nullptr, 0);
 		}
@@ -457,18 +457,18 @@ namespace easywsclient
 		{
 			uint8_t masking_key[4];
 			getMaskingKey(masking_key);
-
 			// TODO: consider acquiring a lock on mTransmitBuffer...
 			if (mReadyState == CLOSING || mReadyState == CLOSED)
 			{
 				return;
 			}
-			uint8_t header[14];
 
+			uint8_t header[14];
 			uint32_t expectedHeaderLen = 2 + (message_size >= 126 ? 2 : 0) + (message_size >= 65536 ? 6 : 0) + (mUseMask ? 4 : 0);
 			uint32_t headerLen = expectedHeaderLen;
 
 			header[0] = uint8_t(0x80 | type);
+
 			if (message_size < 126)
 			{
 				header[1] = (message_size & 0xff) | (mUseMask ? 0x80 : 0);
@@ -545,7 +545,7 @@ namespace easywsclient
 			}
 		}
 
-		void close()
+		virtual void close() override final
 		{
 			if (mReadyState == CLOSING || mReadyState == CLOSED)
 			{
