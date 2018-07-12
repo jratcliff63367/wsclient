@@ -12,14 +12,5 @@ To build for Linux you need CMAKE installed on your machine.
 
 Then run 'build_linux64.sh' or 'generate_projects.sh'
 
-Note: To build this on Linux you need 'ncurses' installed.
-If you do not already have 'ncurses' installed you will get a compile error
+When you run ./TestClient pass the name of the server you are trying to connect to: i.e. "localhost"
 
-The magic linux comand to install 'ncurses' is:
-
-sudo apt-get install libncurses5-dev
-
-Ncurses is a library that supports terminal commands.
-
-For this demo we want to support a simple chat server and need
-keyboard/terminal input for that.
