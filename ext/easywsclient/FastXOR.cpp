@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #define DEBUG_PRINT 0
+#define FORCE_ALIGNMENT 1
 
 namespace fastxor
 {
@@ -40,13 +41,18 @@ void fastXOR(void *data, uint32_t dataLen, uint8_t key[4])
 	}
 	else
 	{
-		uint64_t startAddress = (uint64_t)data;
-		uint32_t skipBytes = (uint32_t)(startAddress & 0x7); // how many bytes we have to skip to get to the 
 		uint8_t alignKey[4] = { key[0], key[1], key[2], key[3] };
 		uint8_t *scan = (uint8_t *)data;
+#if FORCE_ALIGNMENT
+		uint64_t startAddress = (uint64_t)data;
+		uint32_t skipBytes = (uint32_t)(startAddress & 0x7); // how many bytes we have to skip to get to the 
 		if (skipBytes)
 		{
 			skipBytes = 8 - skipBytes;
+			if (skipBytes > dataLen)
+			{
+				skipBytes = dataLen;
+			}
 #if DEBUG_PRINT
 			printf("Skipping the first %d bytes to make sure we are 8 byte aligned.\r\n", skipBytes);
 #endif
@@ -58,7 +64,7 @@ void fastXOR(void *data, uint32_t dataLen, uint8_t key[4])
 			scan += skipBytes;
 			dataLen -= skipBytes;
 		}
-
+#endif
 		uint32_t blockCount = dataLen / 8;
 #if DEBUG_PRINT
 		printf("fastXOR: %d bytes blockCount:%d.\r\n", dataLen, blockCount);
