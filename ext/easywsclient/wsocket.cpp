@@ -72,6 +72,9 @@ typedef int socket_t;
 #pragma warning(disable:4100)
 #endif
 
+#define LOG_SENDS 0
+#define LOG_RECEIVES 0
+
 namespace wsocket
 {
 
@@ -115,6 +118,27 @@ public:
 		if (mSocket)
 		{
 			ret = ::recv(mSocket, (char *)dest, int(maxLen), 0);
+#if LOG_RECEIVES
+			if (ret > 0)
+			{
+				const uint8_t *scan = (const uint8_t *)dest;
+				printf("SOCKET_RECEIVE:");
+				for (int32_t i = 0; i < ret; i++)
+				{
+					uint8_t c = scan[i];
+					if (c >= 32 && c < 127)
+					{
+						printf("%c", c);
+					}
+					else
+					{
+						uint32_t v = uint32_t(c);
+						printf("(%02X)", v);
+					}
+				}
+				printf("\r\n");
+			}
+#endif
 		}
 		return ret;
 	}
@@ -122,6 +146,31 @@ public:
 	virtual int32_t send(const void *data, uint32_t dataLen) override final
 	{
 		int32_t ret = ::send(mSocket, (const char *)data, int(dataLen), 0);
+#if LOG_SENDS
+		if (ret > 0)
+		{
+			if (uint32_t(ret) != dataLen)
+			{
+				printf("*** Partial send: %d bytes requested %d bytes actually send.\r\n", dataLen, ret);
+			}
+			const uint8_t *scan = (const uint8_t *)data;
+			printf("SOCKET_SEND:");
+			for (int32_t i = 0; i < ret; i++)
+			{
+				uint8_t c = scan[i];
+				if (c >= 32 && c < 127)
+				{
+					printf("%c", c);
+				}
+				else
+				{
+					uint32_t v = uint32_t(c);
+					printf("(%02X)", v);
+				}
+			}
+			printf("\r\n");
+		}
+#endif
 		return ret;
 	}
 

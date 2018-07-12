@@ -216,11 +216,6 @@ namespace easywsclient
 			}
 		}
 
-		virtual void release(void) override final
-		{
-			delete this;
-		}
-
 		virtual ReadyStateValues getReadyState() const override final
 		{
 			return mReadyState;
@@ -597,7 +592,7 @@ WebSocket *WebSocket::create(const char *url, const char *origin,bool useMask)
 	auto ret = new WebSocketImpl(url, origin, useMask);
 	if (!ret->isValid())
 	{
-		ret->release();
+		delete ret;
 		ret = nullptr;
 	}
 	return static_cast<WebSocket *>(ret);

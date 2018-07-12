@@ -34,6 +34,11 @@ public:
 	// useMask should be true, it mildly XOR encrypts all messages
 	static WebSocket *create(const char *url, const char *origin="",bool useMask=true);
 
+	virtual ~WebSocket(void)
+	{
+	}
+
+
 	// This client is polled from a single thread.  These methods are *not* thread safe.
 	// If you call them from different threads, you will need to create your own mutex.
 	// While this 'poll' call is non-blocking, you can still run the whole socket connection in it's own
@@ -67,14 +72,6 @@ public:
 	// Maximum size of the buffer
 	virtual uint32_t getTransmitBufferMaxSize(void) const = 0;
 
-	// Release the websockets client interface class
-	virtual void release(void) = 0;
-
-  protected:
-	// Dummy protected destructor. Do not try to 'delete' this class, instead call 'release' to dispose of it
-	virtual ~WebSocket(void)
-	{
-	}
 };
 
 // Initialize sockets one time for your app.

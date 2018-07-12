@@ -24,7 +24,7 @@ int main()
 	{
 		ws->poll(nullptr,1);
 	}
-	ws->release();
+	delete ws;
 
 	easywsclient::socketShutdown();
 

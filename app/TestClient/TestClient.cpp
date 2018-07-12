@@ -65,7 +65,7 @@ int main(int argc,const char **argv)
 				}
 				ws->poll(&rd, 1); // poll the socket connection
 			}
-			ws->release();
+			delete ws;
 		}
 		easywsclient::socketShutdown();
 	}
