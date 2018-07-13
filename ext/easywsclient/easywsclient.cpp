@@ -9,12 +9,18 @@
 #include "SimpleBuffer.h"
 #include "FastXOR.h"
 
+#ifdef _MSC_VER
+#pragma warning(disable:4996)
+#endif
+
 #define DEFAULT_TRANSMIT_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 #define DEFAULT_RECEIVE_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
-#define DEFAULT_MAX_READ_SIZE (1024*16)			// Maximum size of a single read operation
+#define DEFAULT_MAX_READ_SIZE (1024)			// Maximum size of a single read operation
+#define DEFAULT_MAXIMUM_BUFFER_SIZE (1024*1024)*64  // Don't ever cache more than 64 mb of data (for the moment...)
 
 namespace easywsclient
 { // private module-only namespace
+
 
 	class WebSocketImpl : public easywsclient::WebSocket
 	{
@@ -60,9 +66,9 @@ namespace easywsclient
 
 		WebSocketImpl(const char *url,const char *origin, bool useMask) : mReadyState(OPEN), mUseMask(useMask)
 		{
-			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE);
-			mReceivedData	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE);
-			mReceiveBuffer	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE);
+			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+			mReceivedData	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+			mReceiveBuffer	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
 
 			size_t urlSize = strlen(url);
 			size_t originSize = strlen(origin);
@@ -101,7 +107,7 @@ namespace easywsclient
 				}
 				if (port)
 				{
-					fprintf(stderr, "easywsclient: connecting: host=%s port=%d path=/%s\n", host, port, path);
+//					fprintf(stderr, "easywsclient: connecting: host=%s port=%d path=/%s\n", host, port, path);
 					mSocket = wsocket::Wsocket::create(host, port);
 					if (mSocket == nullptr)
 					{
@@ -223,6 +229,7 @@ namespace easywsclient
 
 		virtual void poll(WebSocketCallback *callback, int timeout) override final
 		{ // timeout in milliseconds
+            if (!mSocket) return;
 			if (mReadyState == CLOSED)
 			{
 				if (timeout > 0)
@@ -237,13 +244,20 @@ namespace easywsclient
 			}
 			while (true)
 			{
+                // Get the current read buffer address, and make sure we have room for this many bytes
 				uint8_t *rbuffer = mReceiveBuffer->confirmCapacity(DEFAULT_MAX_READ_SIZE);
+                if (!rbuffer)
+                {
+                    break;
+                }
+                // Read from the socket
 				int32_t ret = mSocket->receive(rbuffer, DEFAULT_MAX_READ_SIZE);
+                // If we got no data but the transmission is still valid, just exit
 				if (ret < 0 && (mSocket->wouldBlock() || mSocket->inProgress()))
 				{
 					break;
 				}
-				else if (ret <= 0)
+				else if (ret <= 0) // If the socket is in a bad state and we got no data, close the connection
 				{
 					mSocket->close();
 					mReadyState = CLOSED;
@@ -296,7 +310,6 @@ namespace easywsclient
 				wsheader_type ws;
 				uint32_t dataLen;
 				uint8_t *data = mReceiveBuffer->getData(dataLen);
-
 				if (dataLen < 2) 
 				{ 
 					break;
@@ -311,6 +324,7 @@ namespace easywsclient
 				{ 
 					break;
 				}
+
 				int32_t i = 0;
 				if (ws.N0 < 126)
 				{
@@ -351,8 +365,9 @@ namespace easywsclient
 					ws.masking_key[2] = 0;
 					ws.masking_key[3] = 0;
 				}
-
-				if (dataLen < ws.header_size + ws.N) 
+                uint32_t frameSize = ws.header_size + uint32_t(ws.N);
+                // If we don't have the full packet worth of data yet...
+				if (dataLen < frameSize) 
 				{ 
 					break;
 				}
@@ -390,6 +405,8 @@ namespace easywsclient
 							mReceivedData->clear();
 						}
 					}
+                    // We just processed this packet, mark it as consumed
+                    mReceiveBuffer->consume(frameSize); // It's been consumed
 				}
 				else if (ws.opcode == wsheader_type::PING)
 				{
@@ -403,9 +420,11 @@ namespace easywsclient
 						pingData = data + ws.header_size;
 					}
 					sendData(wsheader_type::PONG, pingData, ws.N);
+                    mReceiveBuffer->consume(frameSize);
 				}
 				else if (ws.opcode == wsheader_type::PONG)
 				{
+                    mReceiveBuffer->consume(frameSize);
 				}
 				else if (ws.opcode == wsheader_type::CLOSE)
 				{
@@ -416,7 +435,6 @@ namespace easywsclient
 					fprintf(stderr, "ERROR: Got unexpected WebSocket message.\n");
 					close();
 				}
-				mReceiveBuffer->clear();
 			}
 		}
 
@@ -444,6 +462,12 @@ namespace easywsclient
 		{
 			uint64_t seed = wplatform::getRandomTime();
 			memcpy(maskingKey, &seed, 4);
+#if 0 // for debugging only
+            maskingKey[0] = 0;
+            maskingKey[1] = 0;
+            maskingKey[2] = 0;
+            maskingKey[3] = 0;
+#endif
 		}
 
 		void sendData(wsheader_type::opcode_type type,	// Type of data we are sending
