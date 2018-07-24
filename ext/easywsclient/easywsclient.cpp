@@ -315,7 +315,10 @@ namespace easywsclient
 					mReceiveBuffer->addBuffer(nullptr, ret);
 				}
 			}
-
+			if (mReadyState == CLOSED)
+			{
+				return;
+			}
 			while (mTransmitBuffer->getSize())
 			{
 				uint32_t dataLen;
@@ -336,6 +339,10 @@ namespace easywsclient
 				{
 					mTransmitBuffer->consume(ret); // shrink the transmit buffer by the number of bytes we managed to send..
 				}
+			}
+			if (mReadyState == WebSocket::CLOSED)
+			{
+				return;
 			}
 			if (!mTransmitBuffer->getSize() && mReadyState == CLOSING)
 			{
@@ -805,6 +812,10 @@ namespace easywsclient
 		}
 
 		// Process connection state.
+		// If we are a client, then we send the initial request and wait for responses.
+		// If we are a server, we wait for the initial request and, once we get it, send responses.
+		// If we fail to get a timely response within the 'CONNECTION_TIME_OUT' period, we close
+		// the connection
 		void processConnection(void)
 		{
 			if (!mSocket) return;
@@ -836,8 +847,8 @@ namespace easywsclient
 					{
 						case ConnectionPhase::SERVER_CLIENT_STRINGS:
 							ok = true;
-							//                              0123456789012345678901
-							if (strncmp(mConnectionBuffer, "Sec-WebSocket-Version:", 22) == 0)
+							// Just a CR/LF
+							if ( strlen(mConnectionBuffer) == 0 )
 							{
 								mReadyState = WebSocket::OPEN; // we processed all incoming strings from the client as expected
 								mSocket->disableNaglesAlgorithm();
@@ -850,7 +861,7 @@ namespace easywsclient
 								{
 									ok = true;
 									// when the client sends us the 'GET HTTP' command we (as a server)
-									// response with the following lines of protocol response.
+									// respond with the following lines of protocol response.
 									// Clearly this is hardcoded here, but it seems satisfactory for now
 									socketSendString("HTTP/1.1 101 Switching Protocols\r\n");
 									socketSendString("HConnection: upgrade\r\n");

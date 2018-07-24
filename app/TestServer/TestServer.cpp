@@ -68,6 +68,18 @@ public:
 		}
 	}
 
+	bool isConnected(void)
+	{
+		bool ret = false;
+
+		if (mClient && mClient->getReadyState() != easywsclient::WebSocket::CLOSED)
+		{
+			ret = true;
+		}
+
+		return ret;
+	}
+
 	bool					mHaveMessage{ false };
 	std::string				mMessage;
 	easywsclient::WebSocket	*mClient{ nullptr };
@@ -85,7 +97,7 @@ public:
 		mInputLine = inputline::InputLine::create();
 		printf("Simple Websockets chat server started.\r\n");
 		printf("Type 'bye', 'quit', or 'exit' to stop the server.\r\n");
-		printf("Type anything else to send as a broadcast messaage to all current client connections.\r\n");
+		printf("Type anything else to send as a broadcast message to all current client connections.\r\n");
 	}
 
 	~SimpleServer(void)
@@ -141,6 +153,26 @@ public:
 					}
 				}
 			}
+
+			// See if any clients have dropped connection
+			bool killed = true;
+			while (killed)
+			{
+				killed = false;
+				for (ClientConnectionVector::iterator i = mClients.begin(); i != mClients.end(); ++i)
+				{
+					if (!(*i)->isConnected() )
+					{
+						killed = true;
+						ClientConnection *cc = (*i);
+						printf("Lost connection to client: %d\r\n", cc->getId());
+						delete cc;
+						mClients.erase(i);
+						break;
+					}
+				}
+			}
+
 			// For each active client connection..
 			// we see if that client has received a new message
 			// If we have received a message from a client, then we echo that message back to
