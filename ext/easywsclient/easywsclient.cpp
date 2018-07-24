@@ -8,6 +8,7 @@
 #include "wsocket.h"
 #include "SimpleBuffer.h"
 #include "FastXOR.h"
+#include "Timer.h"
 
 #define USE_PROXY_SERVER 0
 
@@ -24,6 +25,8 @@
 #define DEFAULT_MAX_READ_SIZE (1024*4)			// Maximum size of a single read operation
 #define DEFAULT_MAXIMUM_BUFFER_SIZE (1024*1024)*64  // Don't ever cache more than 64 mb of data (for the moment...)
 
+#define CONNECTION_TIME_OUT 60	// wait no more than this number of seconds for connection to complete
+
 //#define TEST_PLAYBACK "f:\\SocketReceive.bin"
 #define RECORD_INPUTS 0
 
@@ -32,6 +35,18 @@ const uint32_t gRecordInputsVersion = 100;
 
 namespace easywsclient
 { // private module-only namespace
+
+	enum class ConnectionPhase :uint32_t 
+	{
+		// These are the responses we expect from the server
+		HTTP_STATUS		= 1,			// "HTTP/1.1 101 Switching Protocols"
+		HCONNECTION_UPGRADE,			// "HConnection: upgrade"
+		HSEC_WEBSOCKET_ACCEPT,			// "HSec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk="
+		HSERVER_WEBSOCKET,				// "HServer: WebSocket++/0.7.0"
+		HUPGRADE_WEBSOCKET,				// "HUpgrade: websocket"
+		H,								// "H"
+		SERVER_CLIENT_STRINGS,			// Server just parsing incoming strings from the client connection
+	};
 
 	class WebSocketImpl : public easywsclient::WebSocket
 #if USE_PROXY_SERVER
@@ -80,11 +95,13 @@ namespace easywsclient
 
 		WebSocketImpl(wsocket::Wsocket *clientSocket, bool useMask)
 		{
+			mIsServerClient = true;	// we are a server connection to a client
 			mSocket = clientSocket;
 			mUseMask = useMask;
 			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
 			mReceivedData = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
 			mReceiveBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+			mReadyState = CONNECTING;
 		}
 
 		WebSocketImpl(const char *url,const char *origin, bool useMask) : mReadyState(OPEN), mUseMask(useMask)
@@ -159,86 +176,41 @@ namespace easywsclient
                         {
                             fprintf(stderr, "Unable to connect to %s:%d\n", host, port);
                         }
-                        else
-                        {
-                            // XXX: this should be done non-blocking,
-                            char line[256];
-                            int status;
-                            int i;
-                            wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path);
-                            mSocket->send(line, uint32_t(strlen(line)));
-                            if (port == 80)
-                            {
-                                wplatform::stringFormat(line, 256, "Host: %s\r\n", host);
-                                mSocket->send(line, uint32_t(strlen(line)));
-                            }
-                            else
-                            {
-                                wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port);
-                                mSocket->send(line, uint32_t(strlen(line)));
-                            }
-                            wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n");
-                            mSocket->send(line, uint32_t(strlen(line)));
-                            wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n");
-                            mSocket->send(line, uint32_t(strlen(line)));
-                            if (originSize)
-                            {
-                                wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin);
-                                mSocket->send(line, uint32_t(strlen(line)));
-                            }
-                            wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n");
-                            mSocket->send(line, uint32_t(strlen(line)));
-                            wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n");
-                            mSocket->send(line, uint32_t(strlen(line)));
-                            wplatform::stringFormat(line, 256, "\r\n");
-                            mSocket->send(line, uint32_t(strlen(line)));
-                            for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
-                            {
-                                if (mSocket->receive(line + i, 1) == 0)
-                                {
-                                    mSocket->release();
-                                    mSocket = nullptr;
-                                    break;
-                                }
-                            }
-                            line[i] = 0;
-                            if (i == 255)
-                            {
-                                fprintf(stderr, "ERROR: Got invalid status line connecting to: %s\n", url);
-                                mSocket->release();
-                                mSocket = nullptr;
-                            }
-                            if (sscanf(line, "HTTP/1.1 %d", &status) != 1 || status != 101)
-                            {
-                                fprintf(stderr, "ERROR: Got bad status connecting to %s: %s", url, line);
-                                mSocket->release();
-                                mSocket = nullptr;
-                            }
-                            if (mSocket)
-                            {
-                                // TODO: verify response headers,
-                                while (true)
-                                {
-                                    for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
-                                    {
-                                        if (mSocket->receive(line + i, 1) == 0)
-                                        {
-                                            mSocket->release();
-                                            mSocket = nullptr;
-                                            break;
-                                        }
-                                    }
-                                    if (line[0] == '\r' && line[1] == '\n')
-                                    {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (mSocket)
-                        {
-                            mSocket->disableNaglesAlgorithm();
-                        }
+						else
+						{
+							mReadyState = ReadyStateValues::CONNECTING;
+							// XXX: this should be done non-blocking,
+							char line[256];
+							wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path);
+							mSocket->send(line, uint32_t(strlen(line)));
+							if (port == 80)
+							{
+								wplatform::stringFormat(line, 256, "Host: %s\r\n", host);
+								mSocket->send(line, uint32_t(strlen(line)));
+							}
+							else
+							{
+								wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port);
+								mSocket->send(line, uint32_t(strlen(line)));
+							}
+							wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n");
+							mSocket->send(line, uint32_t(strlen(line)));
+							wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n");
+							mSocket->send(line, uint32_t(strlen(line)));
+							if (originSize)
+							{
+								wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin);
+								mSocket->send(line, uint32_t(strlen(line)));
+							}
+							wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n");
+							mSocket->send(line, uint32_t(strlen(line)));
+							wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n");
+							mSocket->send(line, uint32_t(strlen(line)));
+							wplatform::stringFormat(line, 256, "\r\n");
+							mSocket->send(line, uint32_t(strlen(line)));
+							mConnectionTimer.getElapsedSeconds();
+							// Ok...send all of the connection strings
+						}
                     }
                 }
             }
@@ -296,6 +268,13 @@ namespace easywsclient
             }
 #endif
             if (!mSocket) return;
+
+			if (mReadyState == CONNECTING)
+			{
+				processConnection();
+				return;
+			}
+
 			if (mReadyState == CLOSED)
 			{
 				if (timeout > 0)
@@ -815,6 +794,131 @@ namespace easywsclient
             }
         }
 #endif
+
+		void socketSendString(const char *str)
+		{
+			if (mSocket)
+			{
+				uint32_t slen = uint32_t(strlen(str));
+				mSocket->send(str, slen);
+			}
+		}
+
+		// Process connection state.
+		void processConnection(void)
+		{
+			if (!mSocket) return;
+			double delay = mConnectionTimer.peekElapsedSeconds();
+			if (delay >= CONNECTION_TIME_OUT)
+			{
+				mSocket->release();
+				mSocket = nullptr;
+				mReadyState = CLOSED;
+				return;
+			}
+			int32_t v = mSocket->receive(&mConnectionBuffer[mConnectionIndex], 1);
+			if (v > 0)
+			{
+				if (mConnectionBuffer[mConnectionIndex] == 0x0A)
+				{
+					mConnectionBuffer[mConnectionIndex] = 0;
+					if (mConnectionIndex > 0)
+					{
+						if (mConnectionBuffer[mConnectionIndex - 1] == 0x0D)
+						{
+							mConnectionBuffer[mConnectionIndex - 1] = 0;
+						}
+					}
+					mConnectionIndex = 0;
+
+					bool ok = false;
+					switch (mConnectionPhase)
+					{
+						case ConnectionPhase::SERVER_CLIENT_STRINGS:
+							ok = true;
+							//                              0123456789012345678901
+							if (strncmp(mConnectionBuffer, "Sec-WebSocket-Version:", 22) == 0)
+							{
+								mReadyState = WebSocket::OPEN; // we processed all incoming strings from the client as expected
+								mSocket->disableNaglesAlgorithm();
+							}
+							break;
+						case ConnectionPhase::HTTP_STATUS:
+							if (mIsServerClient)
+							{
+								if (strcmp(mConnectionBuffer, "GET / HTTP/1.1") == 0)
+								{
+									ok = true;
+									// when the client sends us the 'GET HTTP' command we (as a server)
+									// response with the following lines of protocol response.
+									// Clearly this is hardcoded here, but it seems satisfactory for now
+									socketSendString("HTTP/1.1 101 Switching Protocols\r\n");
+									socketSendString("HConnection: upgrade\r\n");
+									socketSendString("HSec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk=\r\n");
+									socketSendString("HServer: WebSocket++/0.7.0\r\n");
+									socketSendString("HUpgrade: websocket\r\n");
+									socketSendString("H\r\n");
+									mConnectionPhase = ConnectionPhase::SERVER_CLIENT_STRINGS;
+								}
+							}
+							else
+							{
+								int32_t status = 0;
+								if (sscanf(mConnectionBuffer, "HTTP/1.1 %d", &status) != 1 || status != 101)
+								{
+									// unexpected connection format
+								}
+								else
+								{
+									ok = true;
+									mConnectionPhase = ConnectionPhase::HCONNECTION_UPGRADE;
+								}
+							}
+							break;
+						case ConnectionPhase::HCONNECTION_UPGRADE:
+							ok = true;
+							mConnectionPhase = ConnectionPhase::HSEC_WEBSOCKET_ACCEPT;
+							break;
+						case ConnectionPhase::HSEC_WEBSOCKET_ACCEPT:
+							ok = true;
+							mConnectionPhase = ConnectionPhase::HSERVER_WEBSOCKET;
+							break;
+						case ConnectionPhase::HSERVER_WEBSOCKET:
+							ok = true;
+							mConnectionPhase = ConnectionPhase::HUPGRADE_WEBSOCKET;
+							break;
+						case ConnectionPhase::HUPGRADE_WEBSOCKET:
+							ok = true;
+							mConnectionPhase = ConnectionPhase::H;
+							break;
+						case ConnectionPhase::H:
+							ok = true;
+							mReadyState = WebSocket::OPEN; // successfully connected to websockets server!!
+							mSocket->disableNaglesAlgorithm();
+							break;
+					}
+					if (!ok)
+					{
+						mSocket->release();
+						mSocket = nullptr;
+						mReadyState = CLOSED;
+					}
+
+					mConnectionTimer.getElapsedSeconds();
+				}
+				else
+				{
+					mConnectionIndex++;
+					if (mConnectionIndex == 255)
+					{
+						mSocket->release();
+						mSocket = nullptr;
+						mReadyState = CLOSED;
+					}
+				}
+			}
+		}
+
 	private:
         WebSocketCallback           *mCallback{ nullptr };
 #if USE_PROXY_SERVER
@@ -830,6 +934,10 @@ namespace easywsclient
         uint32_t                    mSendCount{ 0 };
         uint32_t                    mReceiveCount{ 0 };
         FILE                        *mLogFile{ nullptr };
+		uint32_t					mConnectionIndex{ 0 };
+		char						mConnectionBuffer[256];
+		timer::Timer				mConnectionTimer;
+		ConnectionPhase				mConnectionPhase{ ConnectionPhase::HTTP_STATUS };
 #if RECORD_INPUTS
         FILE                        *mRecordInputs{ nullptr };
 #endif
