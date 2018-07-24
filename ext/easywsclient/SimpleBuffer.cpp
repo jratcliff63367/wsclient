@@ -172,7 +172,7 @@ namespace simplebuffer
                 growBuffer(capacity);
                 available = mMaxLen - mEndLoc;
 			}
-            if (capacity < available)
+            if (capacity <= available)
             {
                 ret = &mBuffer[mEndLoc];
             }

@@ -12,12 +12,20 @@ class Wsocket
 {
 public:
 	// Create's a socket for this hostname and port; returns null if it failed
+	// Use 'server' as the hostName to create a server connection
 	static Wsocket *create(const char *hostName,int32_t port);
+    static Wsocket *create(const char *playbackFile);
+
 	// On some platforms the sockets interface has to be manually initialized once on startup and then shutdown
 	// These two methods perform that step if needed.
 	// If you do not call 'startupSockets' on the windows platform, no socket create call will succeed.
 	static void startupSockets(void);
 	static void shutdownSockets(void);
+
+	// If we are a server, we poll for new connections.
+	// If a new connection is found, then we return an instance of a Wsocket with that connection.
+	// It is the caller's responsibility to release it when finished
+	virtual Wsocket *pollServer(void) = 0;
 
 	// performs the select operation on this socket
 	virtual void select(int32_t timeOut,size_t txBufSize) = 0;

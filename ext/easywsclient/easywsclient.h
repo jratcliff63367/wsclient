@@ -7,6 +7,11 @@
 //
 #include <stdint.h>
 
+namespace wsocket
+{
+	class Wsocket;
+}
+
 namespace easywsclient 
 {
 
@@ -33,6 +38,9 @@ public:
 	// 'origin' is the optional origin
 	// useMask should be true, it mildly XOR encrypts all messages
 	static WebSocket *create(const char *url, const char *origin="",bool useMask=true);
+
+	// Create call for the server when a new client connection is established
+	static WebSocket *create(wsocket::Wsocket *clientSocket, bool useMask = true);
 
 	virtual ~WebSocket(void)
 	{
@@ -71,6 +79,10 @@ public:
 
 	// Maximum size of the buffer
 	virtual uint32_t getTransmitBufferMaxSize(void) const = 0;
+
+    // Log all sends and receives
+    virtual bool setLogFile(const char *fileName) = 0;
+
 
 };
 

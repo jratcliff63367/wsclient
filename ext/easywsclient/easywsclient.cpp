@@ -9,20 +9,34 @@
 #include "SimpleBuffer.h"
 #include "FastXOR.h"
 
+#define USE_PROXY_SERVER 0
+
+#if USE_PROXY_SERVER
+#include "ProxyServer.h"
+#endif
+
 #ifdef _MSC_VER
 #pragma warning(disable:4996)
 #endif
 
 #define DEFAULT_TRANSMIT_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 #define DEFAULT_RECEIVE_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
-#define DEFAULT_MAX_READ_SIZE (1024)			// Maximum size of a single read operation
+#define DEFAULT_MAX_READ_SIZE (1024*4)			// Maximum size of a single read operation
 #define DEFAULT_MAXIMUM_BUFFER_SIZE (1024*1024)*64  // Don't ever cache more than 64 mb of data (for the moment...)
+
+//#define TEST_PLAYBACK "f:\\SocketReceive.bin"
+#define RECORD_INPUTS 0
+
+const uint32_t gRecordInputsVersion = 100;
+#define BASE_RECORD_INPUTS_LOCATION "f:\\RecordInputs"
 
 namespace easywsclient
 { // private module-only namespace
 
-
 	class WebSocketImpl : public easywsclient::WebSocket
+#if USE_PROXY_SERVER
+		, public proxyserver::ProxyServer::Callback
+#endif
 	{
 	public:
 		// http://tools.ietf.org/html/rfc6455#section-5.2  Base Framing Protocol
@@ -64,137 +78,170 @@ namespace easywsclient
 			uint8_t		masking_key[4];		// Masking key used for this frame
 		};
 
+		WebSocketImpl(wsocket::Wsocket *clientSocket, bool useMask)
+		{
+			mSocket = clientSocket;
+			mUseMask = useMask;
+			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+			mReceivedData = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+			mReceiveBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+		}
+
 		WebSocketImpl(const char *url,const char *origin, bool useMask) : mReadyState(OPEN), mUseMask(useMask)
 		{
-			mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
-			mReceivedData	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
-			mReceiveBuffer	= simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+#if RECORD_INPUTS
+            static uint32_t gRecordCount = 0;
+            char scratch[512];
+            wplatform::stringFormat(scratch, 512, "%s\\RecordInputs%03d.bin",BASE_RECORD_INPUTS_LOCATION, ++gRecordCount);
+            mRecordInputs = fopen(scratch, "wb");
+            if (mRecordInputs)
+            {
+                fwrite(&gRecordInputsVersion, sizeof(gRecordInputsVersion), 1, mRecordInputs);
+                fflush(mRecordInputs);
+            }
+#endif
+#if USE_PROXY_SERVER
+            if (strcmp(url, "proxyserver") == 0)
+            {
+                mProxyServer = proxyserver::ProxyServer::create();
+            }
+            else
+#endif
+            {
+                mTransmitBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_TRANSMIT_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+                mReceivedData = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
+                mReceiveBuffer = simplebuffer::SimpleBuffer::create(DEFAULT_RECEIVE_BUFFER_SIZE, DEFAULT_MAXIMUM_BUFFER_SIZE);
 
-			size_t urlSize = strlen(url);
-			size_t originSize = strlen(origin);
-			char host[128];
-			int port=0;
-			char path[128];
-			if (urlSize >= 128)
-			{
-				fprintf(stderr, "ERROR: url size limit exceeded: %s\n", url);
-			}
-			else if (originSize >= 200)
-			{
-				fprintf(stderr, "ERROR: origin size limit exceeded: %s\n", origin);
-			}
-			else
-			{
-				if (sscanf(url, "ws://%[^:/]:%d/%s", host, &port, path) == 3)
-				{
-				}
-				else if (sscanf(url, "ws://%[^:/]/%s", host, path) == 2)
-				{
-					port = 80;
-				}
-				else if (sscanf(url, "ws://%[^:/]:%d", host, &port) == 2)
-				{
-					path[0] = '\0';
-				}
-				else if (sscanf(url, "ws://%[^:/]", host) == 1)
-				{
-					port = 80;
-					path[0] = '\0';
-				}
-				else
-				{
-					fprintf(stderr, "ERROR: Could not parse WebSocket url: %s\n", url);
-				}
-				if (port)
-				{
-//					fprintf(stderr, "easywsclient: connecting: host=%s port=%d path=/%s\n", host, port, path);
-					mSocket = wsocket::Wsocket::create(host, port);
-					if (mSocket == nullptr)
-					{
-						fprintf(stderr, "Unable to connect to %s:%d\n", host, port);
-					}
-					else
-					{
-						// XXX: this should be done non-blocking,
-						char line[256];
-						int status;
-						int i;
-						wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path);
-						mSocket->send(line, uint32_t(strlen(line)));
-						if (port == 80)
-						{
-							wplatform::stringFormat(line, 256, "Host: %s\r\n", host);
-							mSocket->send(line, uint32_t(strlen(line)));
-						}
-						else
-						{
-							wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port);
-							mSocket->send(line, uint32_t(strlen(line)));
-						}
-						wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n");
-						mSocket->send(line, uint32_t(strlen(line)));
-						wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n");
-						mSocket->send(line, uint32_t(strlen(line)));
-						if (originSize)
-						{
-							wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin);
-							mSocket->send(line, uint32_t(strlen(line)));
-						}
-						wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n");
-						mSocket->send(line, uint32_t(strlen(line)));
-						wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n");
-						mSocket->send(line, uint32_t(strlen(line)));
-						wplatform::stringFormat(line, 256, "\r\n");
-						mSocket->send(line, uint32_t(strlen(line)));
-						for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
-						{
-							if (mSocket->receive(line + i, 1) == 0)
-							{
-								mSocket->release();
-								mSocket = nullptr;
-								break;
-							}
-						}
-						line[i] = 0;
-						if (i == 255)
-						{
-							fprintf(stderr, "ERROR: Got invalid status line connecting to: %s\n", url);
-							mSocket->release();
-							mSocket = nullptr;
-						}
-						if (sscanf(line, "HTTP/1.1 %d", &status) != 1 || status != 101)
-						{
-							fprintf(stderr, "ERROR: Got bad status connecting to %s: %s", url, line);
-							mSocket->release();
-							mSocket = nullptr;
-						}
-						if (mSocket)
-						{
-							// TODO: verify response headers,
-							while (true)
-							{
-								for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
-								{
-									if (mSocket->receive(line + i, 1) == 0)
-									{
-										mSocket->release();
-										mSocket = nullptr;
-										break;
-									}
-								}
-								if (line[0] == '\r' && line[1] == '\n')
-								{
-									break;
-								}
-							}
-						}
-					}
-					if (mSocket)
-					{
-						mSocket->disableNaglesAlgorithm();
-					}
-				}
-			}
+                size_t urlSize = strlen(url);
+                size_t originSize = strlen(origin);
+                char host[128];
+                int port = 0;
+                char path[128];
+                if (urlSize >= 128)
+                {
+                    fprintf(stderr, "ERROR: url size limit exceeded: %s\n", url);
+                }
+                else if (originSize >= 200)
+                {
+                    fprintf(stderr, "ERROR: origin size limit exceeded: %s\n", origin);
+                }
+                else
+                {
+                    if (sscanf(url, "ws://%[^:/]:%d/%s", host, &port, path) == 3)
+                    {
+                    }
+                    else if (sscanf(url, "ws://%[^:/]/%s", host, path) == 2)
+                    {
+                        port = 80;
+                    }
+                    else if (sscanf(url, "ws://%[^:/]:%d", host, &port) == 2)
+                    {
+                        path[0] = '\0';
+                    }
+                    else if (sscanf(url, "ws://%[^:/]", host) == 1)
+                    {
+                        port = 80;
+                        path[0] = '\0';
+                    }
+                    else
+                    {
+                        fprintf(stderr, "ERROR: Could not parse WebSocket url: %s\n", url);
+                    }
+                    if (port)
+                    {
+                        //					fprintf(stderr, "easywsclient: connecting: host=%s port=%d path=/%s\n", host, port, path);
+#ifdef TEST_PLAYBACK
+                        mSocket = wsocket::Wsocket::create(TEST_PLAYBACK);
+#else
+                        mSocket = wsocket::Wsocket::create(host, port);
+#endif
+                        if (mSocket == nullptr)
+                        {
+                            fprintf(stderr, "Unable to connect to %s:%d\n", host, port);
+                        }
+                        else
+                        {
+                            // XXX: this should be done non-blocking,
+                            char line[256];
+                            int status;
+                            int i;
+                            wplatform::stringFormat(line, 256, "GET /%s HTTP/1.1\r\n", path);
+                            mSocket->send(line, uint32_t(strlen(line)));
+                            if (port == 80)
+                            {
+                                wplatform::stringFormat(line, 256, "Host: %s\r\n", host);
+                                mSocket->send(line, uint32_t(strlen(line)));
+                            }
+                            else
+                            {
+                                wplatform::stringFormat(line, 256, "Host: %s:%d\r\n", host, port);
+                                mSocket->send(line, uint32_t(strlen(line)));
+                            }
+                            wplatform::stringFormat(line, 256, "Upgrade: websocket\r\n");
+                            mSocket->send(line, uint32_t(strlen(line)));
+                            wplatform::stringFormat(line, 256, "Connection: Upgrade\r\n");
+                            mSocket->send(line, uint32_t(strlen(line)));
+                            if (originSize)
+                            {
+                                wplatform::stringFormat(line, 256, "Origin: %s\r\n", origin);
+                                mSocket->send(line, uint32_t(strlen(line)));
+                            }
+                            wplatform::stringFormat(line, 256, "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n");
+                            mSocket->send(line, uint32_t(strlen(line)));
+                            wplatform::stringFormat(line, 256, "Sec-WebSocket-Version: 13\r\n");
+                            mSocket->send(line, uint32_t(strlen(line)));
+                            wplatform::stringFormat(line, 256, "\r\n");
+                            mSocket->send(line, uint32_t(strlen(line)));
+                            for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
+                            {
+                                if (mSocket->receive(line + i, 1) == 0)
+                                {
+                                    mSocket->release();
+                                    mSocket = nullptr;
+                                    break;
+                                }
+                            }
+                            line[i] = 0;
+                            if (i == 255)
+                            {
+                                fprintf(stderr, "ERROR: Got invalid status line connecting to: %s\n", url);
+                                mSocket->release();
+                                mSocket = nullptr;
+                            }
+                            if (sscanf(line, "HTTP/1.1 %d", &status) != 1 || status != 101)
+                            {
+                                fprintf(stderr, "ERROR: Got bad status connecting to %s: %s", url, line);
+                                mSocket->release();
+                                mSocket = nullptr;
+                            }
+                            if (mSocket)
+                            {
+                                // TODO: verify response headers,
+                                while (true)
+                                {
+                                    for (i = 0; i < 2 || (i < 255 && line[i - 2] != '\r' && line[i - 1] != '\n'); ++i)
+                                    {
+                                        if (mSocket->receive(line + i, 1) == 0)
+                                        {
+                                            mSocket->release();
+                                            mSocket = nullptr;
+                                            break;
+                                        }
+                                    }
+                                    if (line[0] == '\r' && line[1] == '\n')
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (mSocket)
+                        {
+                            mSocket->disableNaglesAlgorithm();
+                        }
+                    }
+                }
+            }
 		}
 
 		virtual ~WebSocketImpl(void)
@@ -220,6 +267,16 @@ namespace easywsclient
 			{
 				mTransmitBuffer->release();
 			}
+            if (mLogFile)
+            {
+                fclose(mLogFile);
+            }
+#if RECORD_INPUTS
+            if (mRecordInputs)
+            {
+                fclose(mRecordInputs);
+            }
+#endif
 		}
 
 		virtual ReadyStateValues getReadyState() const override final
@@ -229,6 +286,15 @@ namespace easywsclient
 
 		virtual void poll(WebSocketCallback *callback, int timeout) override final
 		{ // timeout in milliseconds
+#if USE_PROXY_SERVER
+            if (mProxyServer)
+            {
+                mCallback = callback;
+                mProxyServer->processResponses(this);
+                mCallback = nullptr;
+                return;
+            }
+#endif
             if (!mSocket) return;
 			if (mReadyState == CLOSED)
 			{
@@ -387,6 +453,7 @@ namespace easywsclient
 					{
 						if (callback )
 						{
+                            logReceive(data + ws.header_size, uint32_t(ws.N));
 							callback->receiveMessage(data+ws.header_size, uint32_t(ws.N), ws.opcode == wsheader_type::TEXT_FRAME);
 						}
 					}
@@ -400,6 +467,7 @@ namespace easywsclient
 							{
 								uint32_t dlen;
 								const void *rdata = mReceivedData->getData(dlen);
+                                logReceive(rdata, dlen);
 								callback->receiveMessage(rdata, dlen, ws.opcode == wsheader_type::TEXT_FRAME);
 							}
 							mReceivedData->clear();
@@ -440,18 +508,64 @@ namespace easywsclient
 
 		virtual void sendPing() override final
 		{
+#if USE_PROXY_SERVER
+            if (mProxyServer) return;
+#endif
 			sendData(wsheader_type::PING, nullptr, 0);
 		}
 
 		virtual void sendText(const char *str) override final
 		{
-			size_t len = str ? strlen(str) : 0;
-			sendData(wsheader_type::TEXT_FRAME, str, len);
+#if RECORD_INPUTS
+            // Write out the ASCII input
+            if (mRecordInputs)
+            {
+                uint32_t isAscii = 1;
+                uint32_t slen = uint32_t(strlen(str));
+                fwrite(&isAscii, sizeof(isAscii), 1, mRecordInputs);
+                fwrite(&slen, sizeof(slen), 1, mRecordInputs);
+                fwrite(str, slen + 1, 1, mRecordInputs);
+                fflush(mRecordInputs);
+            }
+#endif
+#if USE_PROXY_SERVER
+            if (mProxyServer)
+            {
+                logSend(str, uint32_t(strlen(str)));
+                mProxyServer->sendText(str);
+            }
+            else
+#endif
+            {
+                size_t len = str ? strlen(str) : 0;
+                sendData(wsheader_type::TEXT_FRAME, str, len);
+            }
 		}
 
 		virtual void sendBinary(const void *data, uint32_t dataLen) override final
 		{
-			sendData(wsheader_type::BINARY_FRAME, data, dataLen);
+#if RECORD_INPUTS
+            // Write out the ASCII input
+            if (mRecordInputs)
+            {
+                uint32_t isAscii = 0;
+                fwrite(&isAscii, sizeof(isAscii), 1, mRecordInputs);
+                fwrite(&dataLen, sizeof(dataLen), 1, mRecordInputs);
+                fwrite(data,dataLen,1, mRecordInputs);
+                fflush(mRecordInputs);
+            }
+#endif
+#if USE_PROXY_SERVER
+            if (mProxyServer)
+            {
+                logSend(data, dataLen);
+                mProxyServer->sendBinary(data, dataLen);
+            }
+			else
+#endif
+            {
+                sendData(wsheader_type::BINARY_FRAME, data, dataLen);
+            }
 		}
 
 		// Just get the high resolution timer as the current masking key
@@ -470,10 +584,60 @@ namespace easywsclient
 #endif
 		}
 
+        void logReceive(const void *messageData, uint32_t message_size)
+        {
+            if (mLogFile)
+            {
+                fprintf(mLogFile, "===================================================================\r\n");
+                fprintf(mLogFile, "RECEIVE[%d] : %d bytes\r\n", ++mReceiveCount, message_size);
+                fprintf(mLogFile, "===================================================================\r\n");
+                logData(messageData, message_size);
+                fprintf(mLogFile, "\r\n");
+                fprintf(mLogFile, "===================================================================\r\n");
+                fprintf(mLogFile, "\r\n");
+                fflush(mLogFile);
+            }
+        }
+
+        void logData(const void *messageData, uint32_t message_size)
+        {
+            const uint8_t *scan = (const uint8_t *)messageData;
+            for (uint32_t i = 0; i < message_size; i++)
+            {
+                uint8_t c = scan[i];
+                if (c >= 32 && c < 128)
+                {
+                    fprintf(mLogFile, "%c", c);
+                }
+                else
+                {
+                    fprintf(mLogFile, "$%02X", uint32_t(c));
+                }
+            }
+        }
+
+        void logSend(const void *messageData, uint32_t message_size)
+        {
+            if (mLogFile)
+            {
+                fprintf(mLogFile, "===================================================================\r\n");
+                fprintf(mLogFile, "SEND[%d] : %d bytes\r\n", ++mSendCount, message_size);
+                fprintf(mLogFile, "===================================================================\r\n");
+                logData(messageData, message_size);
+                fprintf(mLogFile, "\r\n");
+                fprintf(mLogFile, "===================================================================\r\n");
+                fprintf(mLogFile, "\r\n");
+                fflush(mLogFile);
+            }
+        }
+
+
+
 		void sendData(wsheader_type::opcode_type type,	// Type of data we are sending
 					  const void *messageData,			// The optional message data (this can be null)
 					  uint64_t message_size)			// The size of the message data
 		{
+            logSend(messageData, uint32_t(message_size));
 			uint8_t masking_key[4];
 			getMaskingKey(masking_key);
 			// TODO: consider acquiring a lock on mTransmitBuffer...
@@ -566,53 +730,116 @@ namespace easywsclient
 
 		virtual void close() override final
 		{
-			if (mReadyState == CLOSING || mReadyState == CLOSED)
-			{
-				return;
-			}
-			// add the 'close frame' command to the transmit buffer and set the closing state on
-			mReadyState = CLOSING;
-			uint8_t closeFrame[6] = { 0x88, 0x80, 0x00, 0x00, 0x00, 0x00 }; // last 4 bytes are a masking key
-			mTransmitBuffer->addBuffer(closeFrame, sizeof(closeFrame));
+#if USE_PROXY_SERVER
+            if (mProxyServer)
+            {
+                mReadyState = CLOSED; // it can close immediately.
+            }
+            else
+#endif
+            {
+                if (mReadyState == CLOSING || mReadyState == CLOSED)
+                {
+                    return;
+                }
+                // add the 'close frame' command to the transmit buffer and set the closing state on
+                mReadyState = CLOSING;
+                uint8_t closeFrame[6] = { 0x88, 0x80, 0x00, 0x00, 0x00, 0x00 }; // last 4 bytes are a masking key
+                mTransmitBuffer->addBuffer(closeFrame, sizeof(closeFrame));
+            }
 		}
 
 		bool isValid(void) const
 		{
-			return mSocket ? true : false;
+			bool ret = mSocket ? true : false;
+#if USE_PROXY_SERVER
+            if (mProxyServer)
+            {
+                ret = true;
+            }
+#endif
+            return ret;
 		}
 
 		// Returns the total memory used by the transmit and receive buffers
 		uint32_t getMemoryUsage(void) const override final
 		{
-			uint32_t ret = mTransmitBuffer->getMaxBufferSize();
-			ret += mReceiveBuffer->getMaxBufferSize();
-			ret += mReceivedData->getMaxBufferSize();
+            uint32_t ret = 0;
+#if USE_PROXY_SERVER
+            if (!mProxyServer)
+#endif
+            {
+                ret = mTransmitBuffer->getMaxBufferSize();
+                ret += mReceiveBuffer->getMaxBufferSize();
+                ret += mReceivedData->getMaxBufferSize();
+            }
 			return ret;
 		}
 
 		// Return the amount of memory being consumed by the pending transmit buffer
 		virtual uint32_t getTransmitBufferSize(void) const override final
 		{
-			return mTransmitBuffer->getSize();
+            return mTransmitBuffer ? mTransmitBuffer->getSize() : 0;
 		}
 
 		// Maximum size of the buffer
 		virtual uint32_t getTransmitBufferMaxSize(void) const override final
 		{
-			return mTransmitBuffer->getMaxBufferSize();
+            return mTransmitBuffer ? mTransmitBuffer->getMaxBufferSize() : 0;
 		}
 
+        // Log all sends
+        virtual bool setLogFile(const char *fileName) override final
+        {
+            if (mLogFile == nullptr)
+            {
+                char scratch[512];
+                static uint32_t gSaveCount = 0;
+                snprintf(scratch, 512, "%s%d.txt", fileName, ++gSaveCount);
+                mLogFile = fopen(scratch, "wb");
+                fprintf(mLogFile, "======================================================================\r\n");
+                fprintf(mLogFile, "**** NEW EASYWSCLIENT INSTANCE[%d] ****\r\n", gSaveCount);
+                fprintf(mLogFile, "======================================================================\r\n");
+                fflush(mLogFile);
+            }
+
+            return mLogFile ? true : false;
+        }
+#if USE_PROXY_SERVER
+        virtual void receiveMessage(const void *data, uint32_t dlen, bool isAscii) override final
+        {
+            logReceive(data, dlen);
+            if (mCallback)
+            {
+                mCallback->receiveMessage(data, dlen, isAscii);
+            }
+        }
+#endif
 	private:
+        WebSocketCallback           *mCallback{ nullptr };
+#if USE_PROXY_SERVER
+        proxyserver::ProxyServer    *mProxyServer{ nullptr };
+#endif
 		simplebuffer::SimpleBuffer	*mReceiveBuffer{ nullptr };		// receive buffer
 		simplebuffer::SimpleBuffer	*mTransmitBuffer{ nullptr };	// transmit buffer
 		simplebuffer::SimpleBuffer	*mReceivedData{ nullptr };		// received data
 		wsocket::Wsocket			*mSocket{ nullptr };
 		ReadyStateValues			mReadyState{ CLOSED };
 		bool						mUseMask{ true };
+		bool						mIsServerClient{ false }; // We are a server and this is a connection to a remote client
+        uint32_t                    mSendCount{ 0 };
+        uint32_t                    mReceiveCount{ 0 };
+        FILE                        *mLogFile{ nullptr };
+#if RECORD_INPUTS
+        FILE                        *mRecordInputs{ nullptr };
+#endif
 };
 
 WebSocket *WebSocket::create(const char *url, const char *origin,bool useMask)
 {
+#if USE_PROXY_SERVER
+    url = "proxyserver";
+#endif
 	auto ret = new WebSocketImpl(url, origin, useMask);
 	if (!ret->isValid())
 	{
@@ -621,6 +848,19 @@ WebSocket *WebSocket::create(const char *url, const char *origin,bool useMask)
 	}
 	return static_cast<WebSocket *>(ret);
 }
+
+// Create call for the server when a new client connection is established
+WebSocket *WebSocket::create(wsocket::Wsocket *clientSocket, bool useMask)
+{
+	auto ret = new WebSocketImpl(clientSocket, useMask);
+	if (!ret->isValid())
+	{
+		delete ret;
+		ret = nullptr;
+	}
+	return static_cast<WebSocket *>(ret);
+}
+
 
 void socketStartup(void)
 {
