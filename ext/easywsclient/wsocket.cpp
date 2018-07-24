@@ -300,7 +300,7 @@ public:
 
 		if (mIsServer && mSocket != INVALID_SOCKET)
 		{
-			SOCKET clientSocket = ::accept(mSocket, 0, 0);
+			socket_t clientSocket = ::accept(mSocket, 0, 0);
 			if (clientSocket != INVALID_SOCKET)
 			{
 				WsocketImpl *w = new WsocketImpl(clientSocket);
@@ -311,10 +311,19 @@ public:
 		return ret;
 	}
 
-	void setBlockingInternal(SOCKET socket, bool blocking)
+	void setBlockingInternal(socket_t socket, bool blocking)
 	{
+#ifdef _MSC_VER
 		uint32_t mode = uint32_t(blocking ? 0 : 1);
 		ioctlsocket(socket, FIONBIO, (u_long*)&mode);
+#else
+		int mode = fcntl(socket, F_GETFL, 0);
+		if (!blocking)
+			mode |= O_NONBLOCK;
+		else
+			mode &= ~O_NONBLOCK;
+		fcntl(socket, F_SETFL, mode);
+#endif
 	}
 
 	bool		mIsServer{ false };
