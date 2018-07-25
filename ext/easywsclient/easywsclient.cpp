@@ -283,10 +283,12 @@ namespace easywsclient
 				}
 				return;
 			}
+#if 0
 			if (timeout != 0)
 			{
 				mSocket->select(timeout, mTransmitBuffer->getSize());
 			}
+#endif
 			while (true)
 			{
                 // Get the current read buffer address, and make sure we have room for this many bytes
@@ -560,9 +562,10 @@ namespace easywsclient
 		// this use case and is reasonably fast and portable.
 		inline void getMaskingKey(uint8_t maskingKey[4])
 		{
+#if 1
 			uint64_t seed = wplatform::getRandomTime();
 			memcpy(maskingKey, &seed, 4);
-#if 0 // for debugging only
+#else
             maskingKey[0] = 0;
             maskingKey[1] = 0;
             maskingKey[2] = 0;
@@ -792,7 +795,7 @@ namespace easywsclient
             return mLogFile ? true : false;
         }
 #if USE_PROXY_SERVER
-        virtual void receiveMessage(const void *data, uint32_t dlen, bool isAscii) override final
+        virtual void receiveServerMessage(const void *data, uint32_t dlen, bool isAscii) override final
         {
             logReceive(data, dlen);
             if (mCallback)

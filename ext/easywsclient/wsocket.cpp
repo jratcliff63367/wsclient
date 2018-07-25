@@ -77,8 +77,8 @@ typedef int socket_t;
 #pragma warning(disable:4100)
 #endif
 
-#define SAVE_RECEIVE "f:\\SocketReceive.bin"
-#define SAVE_SEND "f:\\SocketSend.bin"
+//#define SAVE_RECEIVE "f:\\SocketReceive.bin"
+//#define SAVE_SEND "f:\\SocketSend.bin"
 
 namespace wsocket
 {

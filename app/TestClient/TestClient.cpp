@@ -5,6 +5,7 @@
 #include "easywsclient.h"
 #include "InputLine.h"
 #include "wplatform.h"
+#include "TestSharedMemory.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +34,8 @@ public:
 
 int main(int argc,const char **argv)
 {
+//	testSharedMemory();
+
 	if (argc != 2)
 	{
 		printf("Usage: TestClient <hostName>\r\n");
