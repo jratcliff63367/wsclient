@@ -32,8 +32,8 @@ public:
 		mMemoryMap = memorymap::MemoryMap::createMemoryMap("sharedmemorytest.bin", fsize, true, false);
 		if (mMemoryMap)
 		{
-			mWriter.init(mMemoryMap->getBaseAddress(), uint32_t(mMemoryMap->getFileSize()), true);	// writer must always be initialized first!
-			mReader.init(mMemoryMap->getBaseAddress(), uint32_t(mMemoryMap->getFileSize()), false);
+			mWriter.init(mMemoryMap->getBaseAddress(), uint32_t(mMemoryMap->getFileSize()), true,true);	// writer must always be initialized first!
+			mReader.init(mMemoryMap->getBaseAddress(), uint32_t(mMemoryMap->getFileSize()), false,true);
 			mThread = new std::thread([this]()
 			{
 				while (!mExit)

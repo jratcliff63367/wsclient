@@ -30,7 +30,7 @@ public:
 		std::atomic<uint32_t>	mUnused3{ 0 };
 	};
 
-	bool init(void *sharedMemory,uint32_t maxLen,bool isWriter)
+	bool init(void *sharedMemory,uint32_t maxLen,bool isWriter,bool isServer)
 	{
 		bool ret = true; // default return code
 		mIsWriter = isWriter;
@@ -41,7 +41,7 @@ public:
 			mHeader = (SharedMemoryHeader *)mSharedMemory;
 			mCapacity = maxLen - sizeof(SharedMemoryHeader);
 
-			if (isWriter)
+			if (isServer)
 			{
 				mHeader->mVersionNumber = cSharedMemoryVersion;
 				mHeader->mBufferSize = maxLen;
@@ -57,10 +57,6 @@ public:
 					mBaseMemory = nullptr;
 					mHeader = nullptr;
 					ret = false;
-				}
-				else
-				{
-					incrementSequenceNumber(); // increment the sequence number
 				}
 			}
 		}

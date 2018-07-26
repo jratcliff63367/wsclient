@@ -31,14 +31,14 @@ public:
 			// If I'm the server, then I write to the server file and read from the client file
 			if (mIsServer)
 			{
-				mWriter.init(mServerFile->getBaseAddress(), uint32_t(mServerFile->getFileSize()), true);
-				mReader.init(mClientFile->getBaseAddress(), uint32_t(mClientFile->getFileSize()), false);
+				mWriter.init(mServerFile->getBaseAddress(), uint32_t(mServerFile->getFileSize()), true,true);
+				mReader.init(mClientFile->getBaseAddress(), uint32_t(mClientFile->getFileSize()), false,true);
 			}
 			else
 			{
 				// If I am a client..then I write to the client file and read from the server file
-				mWriter.init(mClientFile->getBaseAddress(), uint32_t(mClientFile->getFileSize()), true);
-				mReader.init(mServerFile->getBaseAddress(), uint32_t(mServerFile->getFileSize()), false);
+				mWriter.init(mClientFile->getBaseAddress(), uint32_t(mClientFile->getFileSize()), true,false);
+				mReader.init(mServerFile->getBaseAddress(), uint32_t(mServerFile->getFileSize()), false,false);
 				mWriter.incrementSequenceNumber();
 			}
 		}
