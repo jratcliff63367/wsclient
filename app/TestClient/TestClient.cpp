@@ -36,18 +36,15 @@ int main(int argc,const char **argv)
 {
 //	testSharedMemory();
 
-	if (argc != 2)
+	const char *host = "localhost";
+	if (argc == 2)
 	{
-		printf("Usage: TestClient <hostName>\r\n");
-		printf("\r\n");
-		printf("Use 'localhost' for current machine\r\n");
-		printf("Type: 'bye' or 'quit' or 'exit' to close the client out.\r\n");
+		host = argv[1];
 	}
-	else
 	{
 		easywsclient::socketStartup();
 		char connectString[512];
-		wplatform::stringFormat(connectString, sizeof(connectString), "ws://%s:3009", argv[1]);
+		wplatform::stringFormat(connectString, sizeof(connectString), "ws://%s:3009", host);
 		easywsclient::WebSocket *ws = easywsclient::WebSocket::create(connectString);
 		if (ws)
 		{

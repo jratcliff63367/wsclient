@@ -2,14 +2,18 @@
 set SOURCE=F:\nvidiagit\proxyserver\src
 set SOURCE_INCLUDE=f:\nvidiagit\proxyserver\include
 
-copy %SOURCE%\easywsclient.cpp
-copy %SOURCE%\FastXOR.cpp
-copy %SOURCE%\SimpleBuffer.cpp
-copy %SOURCE%\wplatform.cpp
-copy %SOURCE%\wsocket.cpp
+copy %SOURCE%\*.cpp
+copy %SOURCE_INCLUDE%\*.h
 
-copy %SOURCE_INCLUDE%\wsocket.h
-copy %SOURCE_INCLUDE%\easywsclient.h
-copy %SOURCE_INCLUDE%\wplatform.h
-copy %SOURCE_INCLUDE%\SimpleBuffer.h
-copy %SOURCE_INCLUDE%\FastXOR.h
+del ProxyServer.cpp
+del ProxyServer.h
+del InputLine.cpp
+del InputLine.h
+del FileURI.cpp
+del FileURI.h
+del InParser.cpp
+del InParser.h
+del MemoryStream.h
+del StringId.h
+del itoa_jeaiii.cpp
+del itoa_jeaiii.h

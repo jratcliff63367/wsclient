@@ -33,6 +33,8 @@
 const uint32_t gRecordInputsVersion = 100;
 #define BASE_RECORD_INPUTS_LOCATION "f:\\RecordInputs"
 
+#define USE_LOGGING 0
+
 namespace easywsclient
 { // private module-only namespace
 
@@ -239,10 +241,12 @@ namespace easywsclient
 			{
 				mTransmitBuffer->release();
 			}
+#if USE_LOGGING
             if (mLogFile)
             {
                 fclose(mLogFile);
             }
+#endif
 #if RECORD_INPUTS
             if (mRecordInputs)
             {
@@ -441,7 +445,9 @@ namespace easywsclient
 					{
 						if (callback )
 						{
+#if USE_LOGGING
                             logReceive(data + ws.header_size, uint32_t(ws.N));
+#endif
 							callback->receiveMessage(data+ws.header_size, uint32_t(ws.N), ws.opcode == wsheader_type::TEXT_FRAME);
 						}
 					}
@@ -455,7 +461,9 @@ namespace easywsclient
 							{
 								uint32_t dlen;
 								const void *rdata = mReceivedData->getData(dlen);
+#if USE_LOGGING
                                 logReceive(rdata, dlen);
+#endif
 								callback->receiveMessage(rdata, dlen, ws.opcode == wsheader_type::TEXT_FRAME);
 							}
 							mReceivedData->clear();
@@ -573,6 +581,7 @@ namespace easywsclient
 #endif
 		}
 
+#if USE_LOGGING
         void logReceive(const void *messageData, uint32_t message_size)
         {
             if (mLogFile)
@@ -619,14 +628,16 @@ namespace easywsclient
                 fflush(mLogFile);
             }
         }
-
+#endif
 
 
 		void sendData(wsheader_type::opcode_type type,	// Type of data we are sending
 					  const void *messageData,			// The optional message data (this can be null)
 					  uint64_t message_size)			// The size of the message data
 		{
+#if USE_LOGGING
             logSend(messageData, uint32_t(message_size));
+#endif
 			uint8_t masking_key[4];
 			getMaskingKey(masking_key);
 			// TODO: consider acquiring a lock on mTransmitBuffer...
@@ -780,6 +791,7 @@ namespace easywsclient
         // Log all sends
         virtual bool setLogFile(const char *fileName) override final
         {
+#if USE_LOGGING
             if (mLogFile == nullptr)
             {
                 char scratch[512];
@@ -793,6 +805,10 @@ namespace easywsclient
             }
 
             return mLogFile ? true : false;
+#else
+			(fileName);
+			return false;
+#endif
         }
 #if USE_PROXY_SERVER
         virtual void receiveServerMessage(const void *data, uint32_t dlen, bool isAscii) override final
@@ -871,7 +887,7 @@ namespace easywsclient
 									socketSendString("HSec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk=\r\n");
 									socketSendString("HServer: WebSocket++/0.7.0\r\n");
 									socketSendString("HUpgrade: websocket\r\n");
-									socketSendString("H\r\n");
+									socketSendString("\r\n");
 									mConnectionPhase = ConnectionPhase::SERVER_CLIENT_STRINGS;
 								}
 							}
@@ -947,7 +963,9 @@ namespace easywsclient
 		bool						mIsServerClient{ false }; // We are a server and this is a connection to a remote client
         uint32_t                    mSendCount{ 0 };
         uint32_t                    mReceiveCount{ 0 };
+#if USE_LOGGING
         FILE                        *mLogFile{ nullptr };
+#endif
 		uint32_t					mConnectionIndex{ 0 };
 		char						mConnectionBuffer[256];
 		timer::Timer				mConnectionTimer;
