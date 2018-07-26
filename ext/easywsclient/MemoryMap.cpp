@@ -40,17 +40,19 @@ namespace memorymap
 			mMapHandle = nullptr;
 			bool createFile = true;
 			bool fileOk = false;
-			HANDLE h = CreateFileA(mappingObject, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-			if (h != INVALID_HANDLE_VALUE)
+			if ( !createOk )
 			{
-				size = getFileSize(h);
-				fileOk = true;
-				createFile = false;
-				CloseHandle(h);
+				HANDLE h = CreateFileA(mappingObject, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (h != INVALID_HANDLE_VALUE)
+				{
+					size = getFileSize(h);
+					fileOk = true;
+					CloseHandle(h);
+				}
 			}
 			if (createFile && createOk)
 			{
-				HANDLE _h = CreateFileA(mappingObject, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+				HANDLE _h = CreateFileA(mappingObject, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (_h != INVALID_HANDLE_VALUE)
 				{
 					#define ONEMB (1024*1024)
@@ -86,7 +88,7 @@ namespace memorymap
 				{
 					flags |= GENERIC_WRITE;
 				}
-				mMapFile = CreateFileA(mappingObject, flags, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+				mMapFile = CreateFileA(mappingObject, flags, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (mMapFile != INVALID_HANDLE_VALUE)
 				{
 					mMapHandle = CreateFileMappingA(mMapFile, nullptr, readOnly ? PAGE_READONLY : PAGE_READWRITE, 0, 0, nullptr);

@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// To create a client/server connection using shared memory, use these host names
+#define SHARED_SERVER "sharedserver"	// Open a server connection using shared memory
+#define SHARED_CLIENT "sharedclient"	// Open a client connection using shared memory
+#define SOCKET_SERVER "server"			// Open a socket connection as a server
+
 namespace wsocket
 {
 

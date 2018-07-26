@@ -24,6 +24,10 @@ public:
 		std::atomic<uint32_t>	mBufferSize{0};								// Size of the shared memory buffer (including header)
 		std::atomic<uint32_t>	mReadIndex{0};								// Current read index
 		std::atomic<uint32_t>	mWriteIndex{0};								// Current write index
+		std::atomic<uint32_t>	mSequenceNumber{ 0 };						// a sequence number that can be used for general purposes
+		std::atomic<uint32_t>	mUnused1{ 0 };
+		std::atomic<uint32_t>	mUnused2{ 0 };
+		std::atomic<uint32_t>	mUnused3{ 0 };
 	};
 
 	bool init(void *sharedMemory,uint32_t maxLen,bool isWriter)
@@ -36,12 +40,14 @@ public:
 			mBaseMemory = mSharedMemory + sizeof(SharedMemoryHeader);
 			mHeader = (SharedMemoryHeader *)mSharedMemory;
 			mCapacity = maxLen - sizeof(SharedMemoryHeader);
+
 			if (isWriter)
 			{
 				mHeader->mVersionNumber = cSharedMemoryVersion;
 				mHeader->mBufferSize = maxLen;
 				mHeader->mWriteIndex.store(0, std::memory_order_relaxed);
 				mHeader->mReadIndex.store(0, std::memory_order_relaxed);
+				mHeader->mSequenceNumber.store(0, std::memory_order_relaxed);
 			}
 			else
 			{
@@ -51,6 +57,10 @@ public:
 					mBaseMemory = nullptr;
 					mHeader = nullptr;
 					ret = false;
+				}
+				else
+				{
+					incrementSequenceNumber(); // increment the sequence number
 				}
 			}
 		}
@@ -169,6 +179,26 @@ public:
 		}
 		avail--; // don't write the last byte!!
 		return avail;
+	}
+
+	uint32_t incrementSequenceNumber(void)
+	{
+		uint32_t ret = 0;
+		if (mHeader)
+		{
+			ret = mHeader->mSequenceNumber++;
+		}
+		return ret;
+	}
+
+	uint32_t getSequenceNumber(void) const
+	{
+		uint32_t ret = 0;
+		if (mHeader)
+		{
+			ret = mHeader->mSequenceNumber;
+		}
+		return ret;
 	}
 
 private:

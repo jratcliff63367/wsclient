@@ -94,7 +94,8 @@ class SimpleServer
 public:
 	SimpleServer(void)
 	{
-		mServerSocket = wsocket::Wsocket::create("server", 3009);
+		mServerSocket = wsocket::Wsocket::create(SOCKET_SERVER, 3009);
+//		mServerSocket = wsocket::Wsocket::create(SHARED_SERVER, 3009);
 		mInputLine = inputline::InputLine::create();
 		printf("Simple Websockets chat server started.\r\n");
 		printf("Type 'bye', 'quit', or 'exit' to stop the server.\r\n");

@@ -1,5 +1,6 @@
 #include "wsocket.h"
 #include "wplatform.h"
+#include "socketsharedmemory.h"
 #include <assert.h>
 
 #ifdef _MSC_VER
@@ -79,6 +80,9 @@ typedef int socket_t;
 
 //#define SAVE_RECEIVE "f:\\SocketReceive.bin"
 //#define SAVE_SEND "f:\\SocketSend.bin"
+
+#define SHARED_SERVER "sharedserver"
+#define SHARED_CLIENT "sharedclient"
 
 namespace wsocket
 {
@@ -450,6 +454,11 @@ public:
 
 Wsocket *Wsocket::create(const char *hostName, int32_t port)
 {
+	if (strcmp(hostName, SHARED_SERVER) == 0 ||
+		strcmp(hostName, SHARED_CLIENT) == 0)
+	{
+		return createSocketSharedMemory(hostName, port);
+	}
 	auto ret = new WsocketImpl(hostName, port);
 	if (!ret->isValid())
 	{

@@ -7,6 +7,6 @@ namespace wsocket
 
 class Wsocket;
 
-Wsocket *createSocketSharedMemory(uint32_t port,bool isServer);
+Wsocket *createSocketSharedMemory(const char *hostName, int32_t port);
 
 }
