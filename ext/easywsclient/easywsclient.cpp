@@ -28,10 +28,9 @@
 #define CONNECTION_TIME_OUT 60	// wait no more than this number of seconds for connection to complete
 
 //#define TEST_PLAYBACK "f:\\SocketReceive.bin"
-#define RECORD_INPUTS 0
-
-const uint32_t gRecordInputsVersion = 100;
-#define BASE_RECORD_INPUTS_LOCATION "f:\\RecordInputs"
+//#define RECORD_INPUTS 0
+//const uint32_t gRecordInputsVersion = 100;
+//#define BASE_RECORD_INPUTS_LOCATION "f:\\RecordInputs"
 
 #define USE_LOGGING 0
 
@@ -221,9 +220,15 @@ namespace easywsclient
 		virtual ~WebSocketImpl(void)
 		{
 			close();
+			timer::Timer t;
+			#define CLOSE_TIMEOUT 1		// if we don't receive a response to our close command in this time, go ahead and exit
 			while (mReadyState != CLOSED)
 			{
 				poll(nullptr, 1);
+				if (t.getElapsedSeconds() >= CLOSE_TIMEOUT)
+				{
+					break;
+				}
 			}
 			if (mSocket)
 			{
@@ -493,11 +498,13 @@ namespace easywsclient
 				else if (ws.opcode == wsheader_type::CLOSE)
 				{
 					close();
+					break;
 				}
 				else
 				{
 					fprintf(stderr, "ERROR: Got unexpected WebSocket message.\n");
 					close();
+					break;
 				}
 			}
 		}
@@ -527,7 +534,9 @@ namespace easywsclient
 #if USE_PROXY_SERVER
             if (mProxyServer)
             {
+#if USE_LOGGING
                 logSend(str, uint32_t(strlen(str)));
+#endif
                 mProxyServer->sendText(str);
             }
             else
@@ -554,7 +563,9 @@ namespace easywsclient
 #if USE_PROXY_SERVER
             if (mProxyServer)
             {
+#if USE_LOGGING
                 logSend(data, dataLen);
+#endif
                 mProxyServer->sendBinary(data, dataLen);
             }
 			else
@@ -813,7 +824,9 @@ namespace easywsclient
 #if USE_PROXY_SERVER
         virtual void receiveServerMessage(const void *data, uint32_t dlen, bool isAscii) override final
         {
+#if USE_LOGGING
             logReceive(data, dlen);
+#endif
             if (mCallback)
             {
                 mCallback->receiveMessage(data, dlen, isAscii);

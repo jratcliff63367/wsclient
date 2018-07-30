@@ -16,4 +16,6 @@ namespace wplatform
 	// uses the high resolution timer to approximate a random number.
 	uint64_t getRandomTime(void);
 
+	void sleepNano(uint64_t nanoSeconds);
+
 }

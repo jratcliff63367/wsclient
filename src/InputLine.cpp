@@ -1,5 +1,5 @@
 #include "InputLine.h"
-
+#include "wplatform.h"
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -34,7 +34,7 @@ public:
 				}
 				else
 				{
-					std::this_thread::sleep_for(std::chrono::nanoseconds(1000)); // sleep for 1,000 nanoseconds
+					wplatform::sleepNano(1000);
 				}
 			}
 		});
@@ -45,7 +45,7 @@ public:
 		if (mThread)
 		{
 			mExit = true;
-			mThread->join();
+			mThread->detach();
 			delete mThread;
 		}
 	}

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <chrono>
+#include <thread>
 
 #ifdef _MSC_VER
 #include <windows.h>
@@ -58,6 +59,11 @@ namespace wplatform
 	{
 		uint64_t seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 		return seed;
+	}
+
+	void sleepNano(uint64_t nanoSeconds)
+	{
+		std::this_thread::sleep_for(std::chrono::nanoseconds(nanoSeconds)); // s
 	}
 
 }
