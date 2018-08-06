@@ -1,12 +1,14 @@
 @echo off
-set SOURCE=F:\nvidiagit\proxyserver\src
-set SOURCE_INCLUDE=f:\nvidiagit\proxyserver\include
+set SOURCE=F:\nvidiagit\backend\api_server_cpp\src
+set SOURCE_INCLUDE=f:\nvidiagit\backend\api_server_cpp\include
 
 copy %SOURCE%\*.cpp
 copy %SOURCE_INCLUDE%\*.h
 
-del ProxyServer.cpp
-del ProxyServer.h
+del ApiGen.cpp
+del ApiGen.h
+del ApiServer.cpp
+del ApiServer.h
 del InputLine.cpp
 del InputLine.h
 del FileURI.cpp

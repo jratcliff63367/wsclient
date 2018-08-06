@@ -13,7 +13,7 @@
 #define USE_PROXY_SERVER 0
 
 #if USE_PROXY_SERVER
-#include "ProxyServer.h"
+#include "ApiServer.h"
 #endif
 
 #ifdef _MSC_VER
@@ -23,16 +23,12 @@
 #define DEFAULT_TRANSMIT_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 #define DEFAULT_RECEIVE_BUFFER_SIZE (1024*16)	// Default transmit buffer size is 16k
 #define DEFAULT_MAX_READ_SIZE (1024*4)			// Maximum size of a single read operation
-#define DEFAULT_MAXIMUM_BUFFER_SIZE (1024*1024)*64  // Don't ever cache more than 64 mb of data (for the moment...)
+#define DEFAULT_MAXIMUM_BUFFER_SIZE (1024*1024)*512  // Don't ever cache more than 64 mb of data (for the moment...)
 
 #define CONNECTION_TIME_OUT 60	// wait no more than this number of seconds for connection to complete
 
-//#define TEST_PLAYBACK "f:\\SocketReceive.bin"
-//#define RECORD_INPUTS 0
-//const uint32_t gRecordInputsVersion = 100;
-//#define BASE_RECORD_INPUTS_LOCATION "f:\\RecordInputs"
 
-#define USE_LOGGING 0
+#define USE_LOGGING 1
 
 namespace easywsclient
 { // private module-only namespace
@@ -51,7 +47,7 @@ namespace easywsclient
 
 	class WebSocketImpl : public easywsclient::WebSocket
 #if USE_PROXY_SERVER
-		, public proxyserver::ProxyServer::Callback
+		, public apiserver::ApiServer::Callback
 #endif
 	{
 	public:
@@ -107,21 +103,10 @@ namespace easywsclient
 
 		WebSocketImpl(const char *url,const char *origin, bool useMask) : mReadyState(OPEN), mUseMask(useMask)
 		{
-#if RECORD_INPUTS
-            static uint32_t gRecordCount = 0;
-            char scratch[512];
-            wplatform::stringFormat(scratch, 512, "%s\\RecordInputs%03d.bin",BASE_RECORD_INPUTS_LOCATION, ++gRecordCount);
-            mRecordInputs = fopen(scratch, "wb");
-            if (mRecordInputs)
-            {
-                fwrite(&gRecordInputsVersion, sizeof(gRecordInputsVersion), 1, mRecordInputs);
-                fflush(mRecordInputs);
-            }
-#endif
 #if USE_PROXY_SERVER
-            if (strcmp(url, "proxyserver") == 0)
+            if (strcmp(url, "apiserver") == 0)
             {
-                mProxyServer = proxyserver::ProxyServer::create();
+                mProxyServer = apiserver::ApiServer::create();
             }
             else
 #endif
@@ -250,12 +235,6 @@ namespace easywsclient
             if (mLogFile)
             {
                 fclose(mLogFile);
-            }
-#endif
-#if RECORD_INPUTS
-            if (mRecordInputs)
-            {
-                fclose(mRecordInputs);
             }
 #endif
 		}
@@ -519,18 +498,6 @@ namespace easywsclient
 
 		virtual void sendText(const char *str) override final
 		{
-#if RECORD_INPUTS
-            // Write out the ASCII input
-            if (mRecordInputs)
-            {
-                uint32_t isAscii = 1;
-                uint32_t slen = uint32_t(strlen(str));
-                fwrite(&isAscii, sizeof(isAscii), 1, mRecordInputs);
-                fwrite(&slen, sizeof(slen), 1, mRecordInputs);
-                fwrite(str, slen + 1, 1, mRecordInputs);
-                fflush(mRecordInputs);
-            }
-#endif
 #if USE_PROXY_SERVER
             if (mProxyServer)
             {
@@ -549,17 +516,6 @@ namespace easywsclient
 
 		virtual void sendBinary(const void *data, uint32_t dataLen) override final
 		{
-#if RECORD_INPUTS
-            // Write out the ASCII input
-            if (mRecordInputs)
-            {
-                uint32_t isAscii = 0;
-                fwrite(&isAscii, sizeof(isAscii), 1, mRecordInputs);
-                fwrite(&dataLen, sizeof(dataLen), 1, mRecordInputs);
-                fwrite(data,dataLen,1, mRecordInputs);
-                fflush(mRecordInputs);
-            }
-#endif
 #if USE_PROXY_SERVER
             if (mProxyServer)
             {
@@ -965,7 +921,7 @@ namespace easywsclient
 	private:
         WebSocketCallback           *mCallback{ nullptr };
 #if USE_PROXY_SERVER
-        proxyserver::ProxyServer    *mProxyServer{ nullptr };
+        apiserver::ApiServer    *mProxyServer{ nullptr };
 #endif
 		simplebuffer::SimpleBuffer	*mReceiveBuffer{ nullptr };		// receive buffer
 		simplebuffer::SimpleBuffer	*mTransmitBuffer{ nullptr };	// transmit buffer
@@ -983,15 +939,12 @@ namespace easywsclient
 		char						mConnectionBuffer[256];
 		timer::Timer				mConnectionTimer;
 		ConnectionPhase				mConnectionPhase{ ConnectionPhase::HTTP_STATUS };
-#if RECORD_INPUTS
-        FILE                        *mRecordInputs{ nullptr };
-#endif
 };
 
 WebSocket *WebSocket::create(const char *url, const char *origin,bool useMask)
 {
 #if USE_PROXY_SERVER
-    url = "proxyserver";
+    url = "apiserver";
 #endif
 	auto ret = new WebSocketImpl(url, origin, useMask);
 	if (!ret->isValid())

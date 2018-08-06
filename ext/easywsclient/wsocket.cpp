@@ -274,7 +274,11 @@ public:
 
 		if ((ret = getaddrinfo(hostname, sport, &hints, &result)) != 0)
 		{
+#ifdef _MSC_VER
+            fprintf(stderr, "getaddrinfo: %s\n", gai_strerrorA(ret));
+#else
 			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
+#endif
 			return 1;
 		}
 		for (p = result; p != NULL; p = p->ai_next)
